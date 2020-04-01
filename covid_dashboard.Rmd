@@ -1,0 +1,553 @@
+---
+title: "COVID-19 en Costa Rica"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+library(flexdashboard)
+library(data.table)
+library(countrycode)
+library(lubridate)
+library(ggplot2)
+library(scales)
+library(ggiraph)
+library(cowplot)
+library(sf)
+
+Sys.setlocale(locale="es_ES.UTF-8")
+formato_fecha <- "%d-%b"
+fecha_hoy <- as.character(Sys.Date())
+
+covid19_contagios <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv", header=T)[
+  , tipo := "contagios"
+]
+
+covid19_recuperados <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv", header=T)[
+  , tipo := "recuperados"
+]
+
+covid19_decesos <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv", header=T)[
+  , tipo := "decesos"
+]
+
+covid19 <- rbindlist(list(covid19_contagios, covid19_decesos, covid19_recuperados))
+
+covid19_tidy <- melt(covid19,
+                     id.vars = c("Province/State", "Country/Region", "Lat", "Long", "tipo"),
+                     variable.name = "fecha",
+                     value.name = "casos")[
+                       , `:=`(fecha = mdy(fecha),
+                              cod_pais = countrycode(`Country/Region`, 
+                                                     origin = "country.name", destination = "iso3c"),
+                              pais = countrycode(`Country/Region`, 
+                                                 origin = "country.name", destination = "un.name.es"))
+                     ]
+
+paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Peru", "Brazil", "Chile", "Uruguay")
+
+t_cntrys <- covid19_tidy[`Country/Region` %in% paises
+][
+  , .(casos = sum(casos, na.rm = T)),
+  by = c("Country/Region", "fecha", "tipo", "cod_pais", "pais") 
+][
+  , ID := seq_len(.N)
+]
+
+fecha_min <- t_cntrys[casos == 1, .SD[which.min(fecha)]]$fecha
+
+g1 <- ggplot(t_cntrys[tipo == "contagios" & 
+                        #fecha >= fecha_min & 
+                        fecha >= dmy("08/03/2020") &
+                        casos > 0], 
+       aes(x = fecha, y = casos, group = pais, col = pais)) + 
+  geom_line(alpha = 0.5) +
+  geom_point(size = 1, alpha = 0.7) +
+  # scale_y_continuous(labels=comma) +
+  scale_y_continuous(trans = "log10") +
+  scale_x_date(date_breaks = "4 days", 
+               minor_breaks = NULL,
+               date_labels = formato_fecha) +
+  scale_colour_brewer(palette = "Dark2") +
+  #scale_colour_viridis_d() + 
+  theme_light() +
+  labs(x = "",
+       y = "Casos reportados",
+       col = "",
+       title = "",
+       subtitle = "") +
+  theme(axis.text.x=element_text(angle=60, hjust=1),
+        legend.position = "none",
+        plot.margin = unit(c(0,5,0,0), "mm"))
+
+g1_g <- g1 + 
+  geom_point_interactive(
+    aes(tooltip = paste0(
+      pais, "\n", 
+      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+      casos," casos"),
+      data_id = ID), size = 0.75)
+
+fecha_diauno <- t_cntrys[
+  tipo == "contagios" & casos > 0 ][
+    , .SD[which.min(fecha)], by = "Country/Region" ][
+      , .(`Country/Region`,
+          fecha_diauno = fecha)]
+  
+t_gt_diauno <- fecha_diauno[
+  t_cntrys, on=c(`Country/Region` = "Country/Region") ][
+    fecha >= fecha_diauno][
+      order(`Country/Region`, tipo, fecha) ][
+        casos > 0, 
+        `:=`(num_dia = as.integer(difftime(fecha, fecha_diauno, units = "days") + 1),
+             nuevos_casos = casos - shift(casos, fill = 0),
+             prct_dif_casos = round((casos - shift(casos, fill = 0))/(shift(casos, fill = NA))*100, 1)), 
+        by = c("Country/Region", "tipo", "cod_pais", "pais") ]
+
+t_gt_diauno[is.na(t_gt_diauno)] <- 0
+
+max_dia_CR <- max(t_gt_diauno[`Country/Region` == "Costa Rica" & tipo == "contagios", num_dia])
+
+g2 <- ggplot(t_gt_diauno[num_dia <= max_dia_CR & tipo == "contagios"], 
+       aes(x = num_dia, y = casos, group = pais, col = pais, )) + 
+  geom_line(linetype = 2, size = 0.5, alpha = 0.5) +
+  geom_point(size = 1, alpha = 0.7) +
+  scale_y_continuous() +
+  scale_x_continuous(minor_breaks = NULL) + 
+  #geom_smooth(method="lm", formula= (y ~ exp(2)), se=FALSE, color=1) +
+  scale_colour_brewer(palette = "Dark2") +
+  theme_light() +
+  labs(x = "Días luego de primera detección",
+       y = "Casos reportados",
+       col = "",
+       title = "",
+       subtitle = "") +
+  # guides(color = guide_legend(nrow = 1)) +
+  theme(legend.position = "none",
+        plot.margin = unit(c(0,0,0,0), "mm"))
+
+g2_g <- g2 + 
+  geom_point_interactive(
+    aes(tooltip = paste0(
+    pais, "\n", 
+    paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+    casos," casos"), 
+    data_id = ID), size = 0.75)
+
+setorder(t_gt_diauno, -`Country/Region`, fecha)
+t_gt_diauno$`Country/Region` <- factor(t_gt_diauno$`Country/Region`, 
+                                       levels=unique(t_gt_diauno$`Country/Region`))
+
+breaks = c(1, 10, 100, 1000)
+
+g3 <- ggplot(t_gt_diauno[tipo == "contagios"], 
+       aes(x = fecha, y = `Country/Region`, fill = nuevos_casos)) +
+  geom_tile(width=.9, height=.8) +
+  # scale_y_continuous(breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1))))) +
+  scale_x_date(date_breaks = "4 days", 
+               minor_breaks = NULL,
+               date_labels =  formato_fecha) +
+  theme_light() +
+  # xlim(1, max_dia_CR) +
+  scale_fill_viridis_c(trans = "pseudo_log", breaks = breaks, labels = breaks) +
+  labs(x = "",
+       y = "",
+       fill = "Num. casos",
+       title = "Evolución de pandemia por país",
+       subtitle = "Nuevos casos diarios") +
+  theme(axis.text.x=element_text(angle=60, hjust=1))
+
+g3_g <- g3 + geom_tile_interactive(
+  aes(tooltip = paste0(
+    pais, "\n", 
+    paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+    nuevos_casos," casos")), width=.9, height=.8)
+
+poblacion <- fread("WPP2019_TotalPopulationBySex.csv")[
+  Time == 2020 & Variant == "Medium",
+  .(Location, 
+    PopTotal = as.integer(PopTotal*1000))
+]
+
+tb_general <- merge(t_gt_diauno, poblacion, by.x = "Country/Region", by.y = "Location", all.x = TRUE)
+
+tb_general[
+  , casos_10k := casos*100000/PopTotal]
+
+g4 <- ggplot(tb_general[tipo == "contagios" & 
+                          #fecha >= fecha_min &
+                          fecha >= dmy("08/03/2020")], 
+       aes(x = fecha, y = casos_10k, group = pais, col = pais)) + 
+  geom_line(alpha = 0.7) +
+  geom_point(size = 0.3) +
+  #scale_y_continuous(trans = "log10") +
+  scale_x_date(date_breaks = "4 days", 
+               minor_breaks = NULL,
+               date_labels =  formato_fecha) +
+  scale_colour_brewer(palette = "Dark2") +
+  #scale_colour_viridis_d() + 
+  theme_light() +
+  labs(x = "",
+       y = "Casos por cada 100,000 habitantes",
+       col = "",
+       title = "",
+       subtitle = "") +
+  theme(axis.text.x=element_text(angle=60, hjust=1),
+        legend.position = "none",
+        plot.margin = unit(c(0,0,0,5), "mm"))
+
+g4_g <- g4 + 
+  geom_point_interactive(
+    aes(tooltip = paste0(
+      pais, "\n", 
+      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+      round(casos_10k,1)," casos/10,000 hab."),
+      data_id = ID), size = 0.75)
+
+dt_cantones <- fread("2020-03-30_cantones.csv")
+
+cantones_tidy <- melt(dt_cantones,
+                     id.vars = c("Cantón", "Province"),
+                     variable.name = "fecha",
+                     value.name = "casos")[
+                       , `:=`(fecha = ymd(fecha))
+                     ]
+
+setorder(cantones_tidy, -`Cantón`, fecha)
+
+cantones_tidy[
+  , nuevos_casos := casos - shift(casos, fill = 0),
+  by = "Cantón"
+][
+  , ID := seq_len(.N)
+]
+
+cantones_tidy$`Cantón` <- factor(cantones_tidy$`Cantón`, levels=unique(cantones_tidy$`Cantón`))
+
+g_cant_1 <- ggplot(cantones_tidy, 
+       aes(x = fecha, y = `Cantón`, fill = casos)) + 
+  geom_tile(width=1, height=.8) +
+  #geom_point(size = 0.4) +
+  scale_x_date(date_breaks = "4 days", 
+               minor_breaks = NULL,
+               date_labels = formato_fecha,
+               #limits = c(min(cantones_tidy$fecha), ymd(fecha_hoy)),
+               sec.axis = dup_axis()) +
+  # scale_colour_brewer(palette = "Dark2") +
+  scale_fill_viridis_c(trans = "pseudo_log") +
+  theme_light() +
+  labs(x = "",
+       y = "",
+       fill = "",
+       title = "",
+       subtitle = "Casos acumulados") +
+  theme(#axis.text.x = element_text(angle=60, hjust=1),
+        #axis.text.y = element_text(size = 5),
+        legend.position="left", legend.box = "vertical",
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 6),
+        plot.margin = unit(c(0,0,0,0), "mm")
+        ) +
+  guides(fill = guide_colourbar(barwidth = .5, barheight = 10))
+
+g_cant_1_g <- g_cant_1 + 
+  geom_tile_interactive(
+    aes(tooltip = paste0(
+      "Provincia: ", Province, "\n",
+      "Cantón: ", `Cantón`, "\n",
+      day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE), "\n", 
+      casos," casos totales", "\n",
+      nuevos_casos," casos nuevos"),
+      data_id = ID), 
+    width=1, height=.8)
+
+g_cant_2 <- ggplot(cantones_tidy, 
+       aes(x = fecha, 
+           y = `Cantón`, 
+           fill = nuevos_casos)) + 
+  geom_tile(width=1, height=.8) +
+  #geom_point(size = 0.4) +
+  scale_x_date(date_breaks = "4 days", 
+               minor_breaks = NULL,
+               date_labels = formato_fecha,
+               #limits = c(min(cantones_tidy$fecha), ymd(fecha_hoy)),
+               sec.axis = dup_axis()) +
+  # scale_colour_brewer(palette = "Dark2") +
+  scale_fill_viridis_c(option = "plasma", direction = 1) +
+  theme_light() +
+  labs(x = "",
+       y = "",
+       fill = "",
+       title = "",
+       subtitle = "Nuevos casos por día") +
+  theme(#axis.text.x = element_text(angle=60, hjust=0.5),
+        axis.text.y=element_blank(),
+        legend.position="right", legend.box = "vertical",
+        legend.title = element_text(size = 10),
+        legend.text = element_text(size = 6),
+        plot.margin = unit(c(0,0,0,0), "mm")) +
+  guides(fill = guide_colourbar(barwidth = .5, barheight = 10))
+
+g_cant_2_g <- g_cant_2 + 
+  geom_tile_interactive(
+    aes(tooltip = paste0(
+      "Provincia: ", Province, "\n",
+      "Cantón: ", `Cantón`, "\n",
+      day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE), "\n",
+      casos," casos totales", "\n",
+      nuevos_casos," casos nuevos"),
+      data_id = ID), width=.9, height=.8)
+
+legend_paises <- get_legend(
+  g1 + 
+    guides(color = guide_legend(nrow = 1)) +
+    theme(legend.position = "bottom",
+          plot.margin = unit(c(0,0,0,0), "mm"))
+)
+
+library(rvest)
+url <- "https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Costa_Rica"
+wiki_tbl2 <- read_html(url) %>% 
+  html_node(xpath = '//*[@id="mw-content-text"]/div/table[4]') %>% 
+  html_table(fill = TRUE)
+
+wiki_tbl_diaria_2 <- setDT(wiki_tbl2)[
+  -1][
+    , Fecha := lubridate::ymd(`Reported by`)
+  ][, `Reported by` := NULL]
+
+provincias <- wiki_tbl_diaria_2[, c(1:7,16)]
+provincias <- melt(provincias,
+                   id.vars = "Fecha",
+                   variable.name = "Provincia",
+                   value.name = "casos")[
+                     , `:=`(casos = as.integer(casos),
+                            Provincia = as.character(Provincia))
+                   ]
+
+max_casos_prov <- provincias[, .SD[which.max(Fecha)], by="Provincia"]
+
+provincias <- merge(provincias, 
+                    max_casos_prov[, .(Provincia, casos_max = casos)], 
+                    by = "Provincia", all.x = TRUE)
+
+provincias$Provincia <- factor(provincias$Provincia, levels=unique(provincias$Provincia))
+
+g_prov <- ggplot(provincias, aes(x = Fecha, y = casos, fill = Provincia)) +
+  geom_area_interactive(
+    aes(tooltip = paste0(Provincia, "\n",
+                         casos_max, " casos", 
+                         " al ", day(max(Fecha)), " de ", 
+                         month(max(Fecha), label=TRUE, abbr=FALSE)),
+      data_id = Provincia)) +
+  scale_x_date(date_breaks = "4 days", 
+               minor_breaks = NULL,
+               date_labels =  formato_fecha) +
+  scale_fill_brewer(palette = "Set2") +
+  theme_light() +
+  labs(x = "",
+       y = "Casos reportados",
+       fill = "",
+       title = "Evolución por provincia",
+       subtitle = "") +
+  theme(axis.text.x=element_text(angle=60, hjust=1),
+        legend.position="bottom", legend.box = "horizontal", 
+        plot.margin = unit(c(5,0,0,0), "mm"),
+        legend.key.width = unit(2,"mm"),
+        legend.key.size = unit(5, "mm")) +
+  guides(color = guide_legend(nrow = 1))
+
+CR_detalles <- wiki_tbl_diaria_2[, c(9,11:14, 16)]
+
+for(col in c("Confirmed","Deaths", "ICU", "Rec", "Rej. Tests"))
+  set(CR_detalles, j = col, value = as.integer(CR_detalles[[col]]))
+
+for (col in c("Confirmed", "Deaths", "ICU", "Rec", "Rej. Tests")) CR_detalles[is.na(get(col)), (col) := 0]
+
+CR_detalles_diario <- CR_detalles[
+  , .(Fecha,
+      Casos = Confirmed,
+      Fallecidos = Deaths - shift(Deaths, fill = 0),
+      `En UCI` = ICU,
+      Recup. = Rec - shift(Rec, fill = 0),
+      `Prueb. Neg.` = `Rej. Tests` - shift(`Rej. Tests`, fill = 0))
+]
+
+CR_detalles_diario <- melt(CR_detalles_diario,
+                    id.vars = "Fecha",
+                    variable.name = "grupo",
+                    value.name = "numero")[
+                      , ID := .I
+                    ]
+
+v_resumenDiario_CR <- ggplot(CR_detalles_diario, aes(x = Fecha, y = numero)) +
+  geom_col_interactive(
+        aes(tooltip = paste0(day(Fecha), " de ", 
+                         month(Fecha, label=TRUE, abbr=FALSE), "\n", 
+                         numero, " casos"),
+      data_id = ID)) +
+  facet_grid(rows = vars(grupo), scales = "free") +
+  scale_y_continuous(breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1))))) +
+  scale_x_date(date_breaks = "4 days", 
+               minor_breaks = NULL,
+               date_labels =  formato_fecha) + 
+  theme_light() +
+  labs(x = "",
+       y = "Casos reportados al día",
+       title = "Casos por día") + 
+    theme(axis.text.x=element_text(angle=60, hjust=1),
+        # legend.position="bottom", legend.box = "horizontal", 
+        plot.margin = unit(c(5,0,0,5), "mm"),
+        strip.text.x = element_text(size = 6))
+
+CR_detalles_acum <- CR_detalles[
+  , .(Fecha,
+      Casos = cumsum(Confirmed),
+     Fallecidos = Deaths,
+     `En UCI` = ICU,
+     Recup. = Rec,
+     `Prueb. Neg.` = `Rej. Tests`)
+]
+
+CR_detalles_acum <- melt(CR_detalles_acum,
+                    id.vars = "Fecha",
+                    variable.name = "grupo",
+                    value.name = "numero")[
+                      , ID := .I
+                    ]
+
+v_resumenAcum_CR <- ggplot(CR_detalles_acum, aes(x = Fecha, y = numero)) +
+  geom_line() +
+  geom_point_interactive(
+    aes(tooltip = paste0(day(Fecha), " de ", 
+                         month(Fecha, label=TRUE, abbr=FALSE), "\n", 
+                         numero, " casos"),
+      data_id = ID),
+    size = 0.5) +
+  facet_grid(rows = vars(grupo), scales = "free") +
+  scale_y_continuous(breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1))))) +
+  scale_x_date(date_breaks = "4 days", 
+               minor_breaks = NULL,
+               date_labels =  formato_fecha) + 
+  theme_light() +
+  labs(x = "",
+       y = "Número de casos",
+       title = "Casos acumulados") + 
+    theme(axis.text.x=element_text(angle=60, hjust=1),
+        # legend.position="bottom", legend.box = "horizontal", 
+        plot.margin = unit(c(5,5,0,0), "mm"),
+        strip.text.x = element_text(size = 6))
+  
+cantones_simp <- st_read("cantones.geojson")
+
+```
+
+### Costa Rica en la región
+
+```{r, echo = FALSE, fig.align="center"}
+
+alineados <- align_plots(g1_g, g2_g, legend_paises, align = 'v', axis = 'l')
+linea_2 <- alineados[[2]]
+
+combinado <- plot_grid(
+  plot_grid(alineados[[1]], g4_g), linea_2,
+  ncol = 1, rel_heights = c(1, 1))
+
+girafe(ggobj = plot_grid(
+  alineados[[3]],
+  combinado,
+  ncol = 1, rel_heights = c(.1, 2)),
+  options = list(opts_tooltip(use_fill = TRUE,
+                              offx = 10, offy = 10),
+                 opts_hover(css = "stroke:orange;
+                 stroke-width:2"),
+                 opts_toolbar(saveaspng = FALSE)),
+  width_svg = 8, height_svg = 8)
+
+```
+
+### Casos en Costa Rica
+
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
+girafe(ggobj = plot_grid(v_resumenAcum_CR, v_resumenDiario_CR),
+       options = list(
+          opts_toolbar(saveaspng = FALSE),
+          opts_hover(css = "fill:orange;stroke:orange;stroke-width:1;")),
+       width_svg = 7, height_svg = 5
+       )
+
+girafe(ggobj = g_prov,
+       options = list(
+         opts_tooltip(use_fill = TRUE),
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:NULL;stroke:NULL;")),
+       width_svg = 6, height_svg = 3.5)
+
+
+```
+
+
+### Casos por cantón
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
+#library(tmap)
+library(lwgeom)
+
+cantones_tidy_mapa <- cantones_tidy[
+  fecha == dmy("28-03-2020") & !is.na(casos) & casos > 0]
+
+cant_geo <- merge(cantones_simp, cantones_tidy_mapa, 
+                  by.x = "canton", by.y = "Cantón", all.y = TRUE)
+
+bbox <- st_bbox(c(xmin = 270000, xmax = 680000, ymax = 1260000, ymin = 880000),
+                crs = st_crs(cant_geo))
+cant_geo <- st_crop(cant_geo, bbox)
+cant_geo <- st_make_valid(cant_geo)
+cant_geo_cntrids <- st_centroid(cant_geo)
+
+
+g_mapa <- ggplot() +
+  geom_sf(data = cantones_simp, fill = "gray", col = "white", lwd = 0.1) +
+  geom_sf_interactive(data = cant_geo_cntrids, 
+                      aes(size = casos,
+                          tooltip = paste0("Provincia: ", provincia, "\n",
+                          "Cantón: ", canton, "\n",
+                          "Casos totales: ", casos),
+                          data_id = ID),
+                      col = "red", alpha = 0.3) +
+  coord_sf(datum = NA) +
+  theme_light() + 
+  labs(x = "",
+       y = "",
+       size = "Casos",
+       title = "",
+       subtitle = "") +
+  theme(panel.border = element_blank()) +
+  scale_size_area()
+
+
+girafe(ggobj = g_mapa,
+  options = list(opts_hover(css = "fill:yellow;"),
+                 opts_toolbar(saveaspng = FALSE),
+                 opts_tooltip(css=("background-color:gray;color:white;padding:5px;border-radius:2px;"),
+                              offx = 10, offy = 10)))
+
+```
+
+
+
+### Evolución cantonal de los casos
+
+```{r, echo = FALSE, fig.align="center"}
+girafe(ggobj = plot_grid(g_cant_1_g, g_cant_2_g, rel_widths = c(1, .75)), 
+       options = list(opts_toolbar(saveaspng = FALSE),
+                      opts_hover(css = "fill:transparent;
+                                 stroke:red;
+                                 stroke-width:2"),
+                      opts_tooltip(offx = 15, offy = 15)),
+       width_svg = 8, height_svg = 10)
+```
+
+Elaborado por gds506_at_gmail.com con datos diarios del [CSSE del John Hopkins University](https://github.com/CSSEGISandData/COVID-19) y del Ministerio de Salud de Costa Rica. 
+Los datos del Ministerio de Salud son tomados del [sitio de Wikipedia del COVID-19 de Costa Rica](https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Costa_Rica).
+
+
