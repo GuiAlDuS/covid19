@@ -4,7 +4,6 @@ output: html_document
 ---
 
 ```{r setup, include=FALSE}
-library(flexdashboard)
 library(data.table)
 library(countrycode)
 library(lubridate)
@@ -18,7 +17,7 @@ Sys.setlocale(locale="es_ES.UTF-8")
 formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
 
-dt_cantones <- fread("2020-04-01_cantones.csv")
+dt_cantones <- fread(paste0(fecha_hoy, "_cantones.csv"))
 
 covid19_contagios <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv", header=T)[
   , tipo := "contagios"
@@ -551,5 +550,4 @@ girafe(ggobj = plot_grid(g_cant_1_g, g_cant_2_g, rel_widths = c(1, .75)),
 
 Elaborado por gds506_at_gmail.com con datos diarios del [CSSE del John Hopkins University](https://github.com/CSSEGISandData/COVID-19) y del Ministerio de Salud de Costa Rica. 
 Los datos del Ministerio de Salud son tomados del [sitio de Wikipedia del COVID-19 de Costa Rica](https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Costa_Rica).
-
 
