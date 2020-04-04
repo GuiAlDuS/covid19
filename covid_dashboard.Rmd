@@ -318,7 +318,7 @@ wiki_tbl_diaria_2 <- setDT(wiki_tbl2)[
     , Fecha := lubridate::ymd(`Reported by`)
   ][, `Reported by` := NULL]
 
-provincias <- wiki_tbl_diaria_2[, c(1:7,16)]
+provincias <- wiki_tbl_diaria_2[, c(1:7,17)]
 provincias <- melt(provincias,
                    id.vars = "Fecha",
                    variable.name = "Provincia",
@@ -359,20 +359,22 @@ g_prov <- ggplot(provincias, aes(x = Fecha, y = casos, fill = Provincia)) +
         legend.key.size = unit(5, "mm")) +
   guides(color = guide_legend(nrow = 1))
 
-CR_detalles <- wiki_tbl_diaria_2[, c(9,11:14, 16)]
+CR_detalles <- wiki_tbl_diaria_2[, c(9,11:15, 17)]
 
-for(col in c("Confirmed","Deaths", "ICU", "Rec", "Rej. Tests"))
+for(col in c("Confirmed","Deaths", "Hospitalized","ICU", "Rec", "Rej. Tests"))
   set(CR_detalles, j = col, value = as.integer(CR_detalles[[col]]))
 
-for (col in c("Confirmed", "Deaths", "ICU", "Rec", "Rej. Tests")) CR_detalles[is.na(get(col)), (col) := 0]
+for (col in c("Confirmed", "Deaths", "Hospitalized", "ICU", "Rec", "Rej. Tests")
+     ) CR_detalles[is.na(get(col)), (col) := 0]
 
 CR_detalles_diario <- CR_detalles[
   , .(Fecha,
       Casos = Confirmed,
       Fallecidos = Deaths - shift(Deaths, fill = 0),
+      Hospit. = Hospitalized,
       `En UCI` = ICU,
       Recup. = Rec - shift(Rec, fill = 0),
-      `Prueb. Neg.` = `Rej. Tests` - shift(`Rej. Tests`, fill = 0))
+      Descart. = `Rej. Tests` - shift(`Rej. Tests`, fill = 0))
 ]
 
 CR_detalles_diario <- melt(CR_detalles_diario,
@@ -406,9 +408,10 @@ CR_detalles_acum <- CR_detalles[
   , .(Fecha,
       Casos = cumsum(Confirmed),
      Fallecidos = Deaths,
+     Hospit. = Hospitalized,
      `En UCI` = ICU,
      Recup. = Rec,
-     `Prueb. Neg.` = `Rej. Tests`)
+     Descart. = `Rej. Tests`)
 ]
 
 CR_detalles_acum <- melt(CR_detalles_acum,
