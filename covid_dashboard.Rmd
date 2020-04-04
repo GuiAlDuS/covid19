@@ -275,7 +275,7 @@ g_cant_2 <- ggplot(cantones_tidy,
                #limits = c(min(cantones_tidy$fecha), ymd(fecha_hoy)),
                sec.axis = dup_axis()) +
   # scale_colour_brewer(palette = "Dark2") +
-  scale_fill_viridis_c(option = "plasma", direction = 1) +
+  scale_fill_viridis_c(option = "plasma", direction = 1, labels = number_format(accuracy = 1)) +
   theme_light() +
   labs(x = "",
        y = "",
