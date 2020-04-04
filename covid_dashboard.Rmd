@@ -206,26 +206,26 @@ g4_g <- g4 +
 
 
 cantones_tidy <- melt(dt_cantones,
-                     id.vars = c("Cantón", "Province"),
+                     id.vars = c("canton", "provincia"),
                      variable.name = "fecha",
                      value.name = "casos")[
-                       , `:=`(fecha = ymd(fecha))
+                       , `:=`(fecha = dmy(fecha))
                      ][
                        is.na(casos), casos := 0]
 
-setorder(cantones_tidy, -`Cantón`, fecha)
+setorder(cantones_tidy, -canton, fecha)
 
 cantones_tidy[
   , nuevos_casos := casos - shift(casos, fill = 0),
-  by = "Cantón"
+  by = "canton"
 ][
   , ID := seq_len(.N)
 ]
 
-cantones_tidy$`Cantón` <- factor(cantones_tidy$`Cantón`, levels=unique(cantones_tidy$`Cantón`))
+cantones_tidy$canton <- factor(cantones_tidy$canton, levels=unique(cantones_tidy$canton))
 
 g_cant_1 <- ggplot(cantones_tidy, 
-       aes(x = fecha, y = `Cantón`, fill = casos)) + 
+       aes(x = fecha, y = canton, fill = casos)) + 
   geom_tile(width=1, height=.8) +
   #geom_point(size = 0.4) +
   scale_x_date(date_breaks = "4 days", 
@@ -253,8 +253,8 @@ g_cant_1 <- ggplot(cantones_tidy,
 g_cant_1_g <- g_cant_1 + 
   geom_tile_interactive(
     aes(tooltip = paste0(
-      "Provincia: ", Province, "\n",
-      "Cantón: ", `Cantón`, "\n",
+      "Provincia: ", provincia, "\n",
+      "Cantón: ", canton, "\n",
       day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE), "\n", 
       casos," casos totales", "\n",
       nuevos_casos," casos nuevos"),
@@ -263,7 +263,7 @@ g_cant_1_g <- g_cant_1 +
 
 g_cant_2 <- ggplot(cantones_tidy, 
        aes(x = fecha, 
-           y = `Cantón`, 
+           y = canton, 
            fill = nuevos_casos)) + 
   geom_tile(width=1, height=.8) +
   #geom_point(size = 0.4) +
@@ -291,8 +291,8 @@ g_cant_2 <- ggplot(cantones_tidy,
 g_cant_2_g <- g_cant_2 + 
   geom_tile_interactive(
     aes(tooltip = paste0(
-      "Provincia: ", Province, "\n",
-      "Cantón: ", `Cantón`, "\n",
+      "Provincia: ", provincia, "\n",
+      "Cantón: ", canton, "\n",
       day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE), "\n",
       casos," casos totales", "\n",
       nuevos_casos," casos nuevos"),
@@ -497,7 +497,7 @@ cantones_tidy_mapa <- cantones_tidy[
   fecha == dmy("28-03-2020") & !is.na(casos) & casos > 0]
 
 cant_geo <- merge(cantones_simp, cantones_tidy_mapa, 
-                  by.x = "canton", by.y = "Cantón", all.y = TRUE)
+                  by = c("canton", "provincia"), all.y = TRUE)
 
 bbox <- st_bbox(c(xmin = 270000, xmax = 680000, ymax = 1260000, ymin = 880000),
                 crs = st_crs(cant_geo))
@@ -507,7 +507,7 @@ cant_geo_cntrids <- st_centroid(cant_geo)
 
 
 g_mapa <- ggplot() +
-  geom_sf(data = cantones_simp, fill = "gray", col = "white", lwd = 0.1) +
+  geom_sf(data = cantones_simp, fill = "gray", col = "white", lwd = 0.1, alpha = 0.5) +
   geom_sf_interactive(data = cant_geo_cntrids, 
                       aes(size = casos,
                           tooltip = paste0("Provincia: ", provincia, "\n",

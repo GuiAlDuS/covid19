@@ -7,15 +7,15 @@ covid19_contagios <- fread("https://raw.githubusercontent.com/CSSEGISandData/COV
   , tipo := "contagios"
 ]
 
-# covid19_recuperados <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_19-covid-Recovered.csv", header=T)[
-#   , tipo := "recuperados"
-# ]
+covid19_recuperados <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv", header=T)[
+  , tipo := "recuperados"
+]
 
 covid19_decesos <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv", header=T)[
   , tipo := "decesos"
 ]
 
-covid19 <- rbindlist(list(covid19_contagios, covid19_decesos))
+covid19 <- rbindlist(list(covid19_contagios, covid19_decesos, covid19_recuperados))
 
 covid19_tidy <- melt(covid19,
                      id.vars = c("Province/State", "Country/Region", "Lat", "Long", "tipo"),
@@ -25,17 +25,21 @@ covid19_tidy <- melt(covid19,
                               cod_pais = countrycode(`Country/Region`, 
                                                      origin = "country.name", destination = "iso3c"),
                               pais = countrycode(`Country/Region`, 
-                                                 origin = "country.name", destination = "un.name.es"))
+                                                 origin = "country.name", destination = "un.name.es"),
+                              continente = countrycode(`Country/Region`,
+                                                       origin = "country.name", destination = "continent"),
+                              region = countrycode(`Country/Region`,
+                                                   origin = "country.name", destination = "region"))
                      ]
 
 cntry_list <- unique(covid19_tidy$`Country/Region`)
 
 paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Peru", "Brazil", "Chile", "Uruguay")
 
-t_cntrys <- covid19_tidy[`Country/Region` %in% paises
+t_cntrys <- covid19_tidy[continente == "Americas"
 ][
   , .(casos = sum(casos, na.rm = T)),
-  by = c("Country/Region", "fecha", "tipo", "cod_pais", "pais") 
+  by = c("Country/Region", "fecha", "tipo", "cod_pais", "pais", "continente", "region") 
 ][
   , ID := seq_len(.N)
 ]
@@ -45,20 +49,31 @@ fecha_min <- t_cntrys[casos == 1, .SD[which.min(fecha)]]$fecha
 library(ggplot2)
 library(scales)
 library(ggiraph)
+library(ggrepel)
 
 g1 <- ggplot(t_cntrys[tipo == "contagios" & 
-                        fecha >= fecha_min & 
-                        fecha >= dmy("08/03/2020")], 
-       aes(x = fecha, y = casos, group = pais, col = pais)) + 
-  geom_line(alpha = 0.5) +
-  geom_point(size = 1, alpha = 0.7) +
-  scale_y_continuous(labels=comma) +
-  #scale_y_continuous(trans = "log10") +
+                        fecha >= fecha_min &
+                        `Country/Region` != "Costa Rica"], 
+       aes(x = fecha, y = casos, group = pais, col = region)) + 
+  # geom_point() +
+  geom_smooth(alpha = 0.5, size = 0.5, se = FALSE) +
+  geom_smooth(
+    data = t_cntrys[tipo == "contagios" & 
+               fecha >= fecha_min &
+               `Country/Region` == "Costa Rica"],
+    aes(x = fecha, y = casos), 
+    size = 1.5, col = "red", se = FALSE
+  ) +
+  # scale_y_continuous(labels=comma) +
+  geom_label_repel(aes(label = `Country/Region`),
+                   nudge_x = 1,
+                   na.rm = TRUE) + 
+  scale_y_continuous(trans = "log10") +
   scale_x_date(date_breaks = "3 days", 
                minor_breaks = NULL,
                date_labels = '%d de %B') +
-  scale_colour_brewer(palette = "Dark2") +
-  #scale_colour_viridis_d() + 
+  # scale_colour_brewer(palette = "Dark2") +
+  # scale_colour_viridis_d() + 
   theme_light() +
   labs(x = "",
        y = "Número de casos reportados",
@@ -66,7 +81,7 @@ g1 <- ggplot(t_cntrys[tipo == "contagios" &
        title = "",
        subtitle = "Casos por fecha") +
   theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.position = "none")
+        legend.position = "bottom")
 
 g1_g <- g1 + 
   geom_point_interactive(
@@ -220,56 +235,33 @@ g5 <- ggplot(t_gt_diauno[tipo == "contagios" &
 ############
 ############
 
-cantones_raw <- fread("data-2anUA.csv")
+cantones_uned <- fread("http://geovision.uned.ac.cr/oges/archivos_covid/04_03/04_03_CSV.csv")
 
-nom_viejos <- colnames(cantones_raw)
-nom_nuevos <- c("Cantón", "2020-03-15", "2020-03-16", "2020-03-17", "2020-03-18", "2020-03-19", "2020-03-20",
-                "2020-03-21", "2020-03-22", "2020-03-23")
+cantones_uned$provincia <- iconv(cantones_uned$provincia, "macintosh", "UTF-8")
 
-cantones_raw <- setnames(cantones_raw, nom_viejos, nom_nuevos)
+cols <- c("provincia", "canton")
 
+cantones_uned[ , (cols) := lapply(.SD, iconv, "macintosh", "UTF-8"), .SDcols = cols]
+cantones_uned <- cantones_uned[,which(unlist(lapply(cantones_uned, function(x)!all(is.na(x))))),with=F]
+cantones_uned[, `:=`(cod_provin = NULL, cod_canton = NULL)]
+cantones_uned <- cantones_uned[!rowSums(cantones_uned[, 3:ncol(cantones_uned)])==0]
 
-library(rvest)
-url <- "https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Costa_Rica"
-wiki_tbl <- read_html(url) %>% 
-  html_node(xpath = '//*[@id="mw-content-text"]/div/table[3]') %>% 
-  html_table(fill = TRUE)
+fwrite(cantones_uned, paste0(fecha_hoy, "_cantones.csv"))
 
-wiki_tbl_diaria <- setDT(head(wiki_tbl, -1))[
-  , 1:3 ][ 
-    -1][
-      , Cases := as.integer(Cases)
-    ]
-
-fecha_hoy <- as.character(Sys.Date())
-#fecha_hoy <- "2020-03-30"
-setnames(wiki_tbl_diaria, "Cases", fecha_hoy)
-
-dt_cantones <- fread("2020-04-01_cantones.csv")
-
-dt_cantones <- merge(dt_cantones[, -"Province"], wiki_tbl_diaria
-                     , by.x = "Cantón", by.y = "Canton", all = TRUE)
-
-dt_cantones[is.na(eval(fecha_hoy)), eval(fecha_hoy) := 0]
-
-dt_cantones[`Cantón` == "Unknown", `Cantón` := "Desconocido"]
-
-fwrite(dt_cantones, paste0(fecha_hoy, "_cantones.csv"))
+cantones_tidy <- melt(cantones_uned,
+                      id.vars = c("canton", "provincia"),
+                      variable.name = "fecha",
+                      value.name = "casos")[
+                        , `:=`(fecha = dmy(fecha))
+                      ]
 
 # dt_cantones <- fread("2020-03-30_cantones.csv")
 
-cantones_tidy <- melt(dt_cantones,
-                     id.vars = c("Cantón", "Province"),
-                     variable.name = "fecha",
-                     value.name = "casos")[
-                       , `:=`(fecha = ymd(fecha))
-                     ]
-
-setorder(cantones_tidy, -`Cantón`, fecha)
+setorder(cantones_tidy, -canton, fecha)
 
 cantones_tidy[
   , nuevos_casos := casos - shift(casos, fill = 0),
-  by = "Cantón"
+  by = "canton"
 ]
 
 cantones_tidy$`Cantón` <- factor(cantones_tidy$`Cantón`, levels=unique(cantones_tidy$`Cantón`))
