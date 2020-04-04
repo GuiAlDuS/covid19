@@ -220,6 +220,8 @@ cantones_tidy[
   by = "canton"
 ][
   , ID := seq_len(.N)
+][
+  nuevos_casos < 0, nuevos_casos := 0
 ]
 
 cantones_tidy$canton <- factor(cantones_tidy$canton, levels=unique(cantones_tidy$canton))
@@ -228,7 +230,7 @@ g_cant_1 <- ggplot(cantones_tidy,
        aes(x = fecha, y = canton, fill = casos)) + 
   geom_tile(width=1, height=.8) +
   #geom_point(size = 0.4) +
-  scale_x_date(date_breaks = "4 days", 
+  scale_x_date(date_breaks = "1 week", 
                minor_breaks = NULL,
                date_labels = formato_fecha,
                #limits = c(min(cantones_tidy$fecha), ymd(fecha_hoy)),
@@ -267,7 +269,7 @@ g_cant_2 <- ggplot(cantones_tidy,
            fill = nuevos_casos)) + 
   geom_tile(width=1, height=.8) +
   #geom_point(size = 0.4) +
-  scale_x_date(date_breaks = "4 days", 
+  scale_x_date(date_breaks = "1 week", 
                minor_breaks = NULL,
                date_labels = formato_fecha,
                #limits = c(min(cantones_tidy$fecha), ymd(fecha_hoy)),
