@@ -18,6 +18,7 @@ library(httr)
 Sys.setlocale(locale="es_ES.UTF-8")
 formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
+#fecha_hoy <- "2020-04-09"
 
 fun_cantones_resumen <- function(fecha_hoy){
   URL_excel <- paste0("http://geovision.uned.ac.cr/oges/archivos_covid/", 
@@ -175,32 +176,7 @@ setorder(provincias, provincia)
 
 provincias$provincia <- factor(provincias$provincia, levels=unique(provincias$provincia))
 
-g_prov <- ggplot(provincias, aes(x = fecha, y = casos, fill = provincia)) +
-  geom_area_interactive(
-    aes(tooltip = paste0(provincia, "\n",
-                         max_casos, " casos", 
-                         " al ", day(max(fecha)), " de ", 
-                         month(max(fecha), label=TRUE, abbr=FALSE)),
-      data_id = provincia)) +
-  scale_x_date(date_breaks = "4 days", 
-               minor_breaks = NULL,
-               date_labels =  formato_fecha) +
-  scale_fill_brewer(palette = "Set2") +
-  theme_light() +
-  labs(x = "",
-       y = "Casos reportados",
-       fill = "",
-       title = "Evolución por provincia",
-       subtitle = "") +
-  theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.position="bottom", legend.box = "horizontal", 
-        plot.margin = unit(c(5,0,0,0), "mm"),
-        legend.key.width = unit(2,"mm"),
-        legend.key.size = unit(5, "mm")) +
-  guides(color = guide_legend(nrow = 1))
-
 CR_detalles <- cant_resumen$resumen
-
 
 ```
 
@@ -347,7 +323,6 @@ girafe(ggobj = plot_grid(
 
 ### Casos en Costa Rica
 
-
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
 v_resumenDiario_CR <- ggplot(
   CR_detalles[ info %in% c("Confirmados", "Recuperados" , "Fallecidos", "Descartados")], 
@@ -403,21 +378,183 @@ girafe(ggobj = plot_grid(v_resumenAcum_CR, v_resumenDiario_CR),
        width_svg = 7, height_svg = 5
        )
 
+```
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
+branded_colors <- list(
+  "blue"   = "#00798c",
+  "red"    = "#d1495b",
+  "yellow" = "#edae49",
+  "green"  = "#66a182",
+  "navy"   = "#2e4057", 
+  "grey"   = "#8d96a3"
+)
+
+branded_pal <- function(
+  primary = "blue", 
+  other = "grey", 
+  direction = 1
+) {
+  stopifnot(primary %in% names(branded_colors))
+  
+  function(n) {
+    if (n > 6) warning("Branded Color Palette only has 6 colors.")
+    
+    if (n == 2) {
+      other <- if (!other %in% names(branded_colors)) {
+        other
+      } else {
+        branded_colors[other]
+      }
+      color_list <- c(other, branded_colors[primary])
+    } else {
+      color_list <- branded_colors[1:n]
+    }
+    
+    color_list <- unname(unlist(color_list))
+    if (direction >= 0) color_list else rev(color_list)
+  }
+}
+
+scale_fill_branded_d <- function(
+  primary = "blue", 
+  other = "grey", 
+  direction = 1, 
+  ...
+) {
+  ggplot2::discrete_scale(
+    "fill", "branded", 
+    branded_pal(primary, other, direction), 
+    ...
+  )
+}
+
+scale_fill_branded_d <- scale_fill_branded_d
+
+edades <- CR_detalles[info %in% c("Adultos", "Adultos Mayores", "Menores") &
+                        fecha > lubridate::dmy("09/3/2020")]
+hospitalizacion <- CR_detalles[info %in% c("Salón", "UCI") &
+                        fecha > lubridate::dmy("09/3/2020")]
+sexo <- CR_detalles[info %in% c("Mujeres", "Hombres") &
+                        fecha > lubridate::dmy("09/3/2020")]
+
+g_edades <- ggplot(edades,
+       aes(x = fecha, y = casos, group = info, fill = info)) +
+  geom_col_interactive(
+    aes(tooltip = paste0(
+      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n",
+      info, "\n",
+      casos," casos"), 
+      data_id = ID),
+    position = position_dodge()) + 
+  scale_y_continuous(limits = c(0, NA),
+                     expand = c(0,2)) +
+  scale_x_date(date_breaks = "1 week", 
+               minor_breaks = NULL,
+               date_labels = formato_fecha) +
+  theme_light() +
+  labs(x = "",
+       y = "Casos",
+       fill = "Edades") + 
+  theme(axis.text.x=element_text(angle=60, hjust=1),
+        legend.key.width = unit(2,"mm"),
+        plot.margin = unit(c(3,0,0,0), "mm"))
+
+g_hospi <- ggplot(hospitalizacion,
+                  aes(x = fecha, y = casos, group = info, fill = info)) +
+  geom_col_interactive(
+    aes(tooltip = paste0(
+      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+      info, "\n",
+      casos," casos"), 
+      data_id = ID),
+    position = position_dodge()) + 
+  scale_fill_branded_d(other = "#a2d729") +
+  scale_x_date(date_breaks = "1 week", 
+               minor_breaks = NULL,
+               date_labels = formato_fecha) +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = c(0,0.2)) +
+  theme_light() +
+  labs(x = "",
+       y = "Casos",
+       fill = "Hospitalización") + 
+  theme(axis.text.x=element_text(angle=60, hjust=1),
+        legend.key.width = unit(2,"mm"),
+        plot.margin = unit(c(0,0,0,0), "mm"))
+
+g_sexo <- ggplot(sexo, 
+       aes(x = fecha, y = casos, group = info, fill = info)) +
+  geom_col_interactive(
+    aes(tooltip = paste0(
+      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+      info, "\n",
+      casos," casos"), 
+      data_id = ID),
+    position = position_dodge()) +
+  scale_fill_branded_d(primary = "grey",
+                       other = "orange") +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = c(0,2)) +
+  scale_x_date(date_breaks = "1 week", 
+               minor_breaks = NULL,
+               date_labels = formato_fecha) +
+  theme_light() +
+  labs(x = "",
+       y = "Casos",
+       fill = "Sexo") + 
+  theme(axis.text.x=element_text(angle=60, hjust=1),
+        legend.key.width = unit(2,"mm"),
+        plot.margin = unit(c(0,0,0,0), "mm"))
+
+alineados <- align_plots(g_edades, g_sexo, g_hospi, align = 'hv', axis = 'rl')
+
+girafe(ggobj = plot_grid(alineados[[1]], alineados[[2]], alineados[[3]], ncol = 1),
+       options = list(
+         opts_tooltip(use_fill = TRUE),
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:NULL;stroke:NULL;")),
+       width_svg = 6.5, height_svg = 7)
+
+```
+
+### Casos por provincia
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
+g_prov <- ggplot(provincias, aes(x = fecha, y = casos, fill = provincia)) +
+  geom_area_interactive(
+    aes(tooltip = paste0(provincia, "\n",
+                         max_casos, " casos", 
+                         " al ", day(max(fecha)), " de ", 
+                         month(max(fecha), label=TRUE, abbr=FALSE)),
+      data_id = provincia)) +
+  scale_x_date(date_breaks = "4 days", 
+               minor_breaks = NULL,
+               date_labels =  formato_fecha) +
+  scale_fill_brewer(palette = "Set2") +
+  theme_light() +
+  labs(x = "",
+       y = "Casos reportados",
+       fill = "",
+       title = "",
+       subtitle = "") +
+  theme(axis.text.x=element_text(angle=60, hjust=1),
+        legend.position="bottom", legend.box = "horizontal", 
+        plot.margin = unit(c(5,0,0,0), "mm"),
+        legend.key.width = unit(2,"mm"),
+        legend.key.size = unit(5, "mm")) +
+  guides(color = guide_legend(nrow = 1))
+
 girafe(ggobj = g_prov,
        options = list(
          opts_tooltip(use_fill = TRUE),
          opts_toolbar(saveaspng = FALSE),
          opts_hover(css = "fill:NULL;stroke:NULL;")),
        width_svg = 6, height_svg = 3.5)
-
-
 ```
 
 
 ### Casos por cantón
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
-#library(tmap)
-
 library(lwgeom)
 
 cant_geo <- cantones_tidy_mapa[
