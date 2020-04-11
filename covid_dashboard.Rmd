@@ -169,7 +169,7 @@ cantones_tidy_mapa <- merge(cantones_simp, cantones_tidy, by = "canton")
 provincias = merge(cantones_tidy, cantones_simp, by = "canton")[
   , .(casos = sum(casos)), by = c("provincia", "fecha")
 ][
-  , max_casos := max(casos)
+  , max_casos := max(casos), by = c("provincia")
 ]
 
 setorder(provincias, provincia)
@@ -521,11 +521,11 @@ girafe(ggobj = plot_grid(alineados[[1]], alineados[[2]], alineados[[3]], ncol = 
 ### Casos por provincia
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
 g_prov <- ggplot(provincias, aes(x = fecha, y = casos, fill = provincia)) +
-  geom_area_interactive(
+  geom_col_interactive(
     aes(tooltip = paste0(provincia, "\n",
-                         max_casos, " casos", 
-                         " al ", day(max(fecha)), " de ", 
-                         month(max(fecha), label=TRUE, abbr=FALSE)),
+                         casos, " casos", 
+                         " al ", day(fecha), " de ", 
+                         month(fecha, label=TRUE, abbr=FALSE)),
       data_id = provincia)) +
   scale_x_date(date_breaks = "4 days", 
                minor_breaks = NULL,
@@ -555,30 +555,34 @@ girafe(ggobj = g_prov,
 
 ### Casos por cantón
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
-library(lwgeom)
-
 cant_geo <- cantones_tidy_mapa[
   cantones_tidy_mapa$fecha == fecha_hoy & 
     !is.na(cantones_tidy_mapa$casos) & 
     cantones_tidy_mapa$casos > 0, ]
 
-# cant_geo <- merge(cantones_simp, cantones_tidy_mapa, 
-#                   by = c("canton", "provincia"), all.y = TRUE)
-
-bbox <- st_bbox(c(xmin = 270000, xmax = 680000, ymax = 1260000, ymin = 880000),
-                crs = st_crs(cant_geo))
-cant_geo <- st_crop(cant_geo, bbox)
-cant_geo <- st_make_valid(cant_geo)
 cant_geo_cntrids <- st_centroid(cant_geo)
 
+provincias_geo <- aggregate(cantones_simp[, "cod_canton"], 
+                            by = list(cantones_simp$provincia),
+                            FUN = max)
+
+provincias_geo <- dplyr::rename(provincias_geo, provincia = Group.1)
+
+provincias_mapa <-  merge(provincias_geo, provincias[fecha == fecha_hoy, ], by = "provincia")
 
 g_mapa <- ggplot() +
-  geom_sf(data = cantones_simp, fill = "gray", col = "white", lwd = 0.1, alpha = 0.5) +
+  geom_sf(data = cantones_simp, fill = "gray", col = "white", lwd = 0.2, alpha = 0.5) +
+  geom_sf(data = provincias_mapa, fill = NA, col = "white", lwd = 0.7) +
+  geom_sf_text(data = provincias_mapa, aes(label = paste0(provincia, "\n",
+                                                          casos, " casos")),
+               alpha = 0.6,
+               size = 2,
+               check_overlap = TRUE) +
   geom_sf_interactive(data = cant_geo_cntrids, 
                       aes(size = casos,
                           tooltip = paste0("Provincia: ", provincia, "\n",
-                          "Cantón: ", canton, "\n",
-                          "Casos totales: ", casos),
+                                           "Cantón: ", canton, "\n",
+                                           "Casos totales: ", casos),
                           data_id = ID),
                       col = "red", alpha = 0.3) +
   coord_sf(datum = NA) +
@@ -590,7 +594,6 @@ g_mapa <- ggplot() +
        subtitle = "") +
   theme(panel.border = element_blank()) +
   scale_size_area()
-
 
 girafe(ggobj = g_mapa,
   options = list(opts_hover(css = "fill:yellow;"),
