@@ -518,42 +518,7 @@ girafe(ggobj = plot_grid(alineados[[1]], alineados[[2]], alineados[[3]], ncol = 
 
 ```
 
-### Casos por provincia
-```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
-g_prov <- ggplot(provincias, aes(x = fecha, y = casos, fill = provincia)) +
-  geom_col_interactive(
-    aes(tooltip = paste0(provincia, "\n",
-                         casos, " casos", 
-                         " al ", day(fecha), " de ", 
-                         month(fecha, label=TRUE, abbr=FALSE)),
-      data_id = provincia)) +
-  scale_x_date(date_breaks = "4 days", 
-               minor_breaks = NULL,
-               date_labels =  formato_fecha) +
-  scale_fill_brewer(palette = "Set2") +
-  theme_light() +
-  labs(x = "",
-       y = "Casos reportados",
-       fill = "",
-       title = "",
-       subtitle = "") +
-  theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.position="bottom", legend.box = "horizontal", 
-        plot.margin = unit(c(5,0,0,0), "mm"),
-        legend.key.width = unit(2,"mm"),
-        legend.key.size = unit(5, "mm")) +
-  guides(color = guide_legend(nrow = 1))
-
-girafe(ggobj = g_prov,
-       options = list(
-         opts_tooltip(use_fill = TRUE),
-         opts_toolbar(saveaspng = FALSE),
-         opts_hover(css = "fill:NULL;stroke:NULL;")),
-       width_svg = 6, height_svg = 3.5)
-```
-
-
-### Casos por cantón
+### Casos por cantón y provincia
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
 cant_geo <- cantones_tidy_mapa[
   cantones_tidy_mapa$fecha == fecha_hoy & 
@@ -603,10 +568,41 @@ girafe(ggobj = g_mapa,
 
 ```
 
+### Evolución de casos por provincia
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
+g_prov <- ggplot(provincias, aes(x = fecha, y = casos, fill = provincia)) +
+  geom_col_interactive(
+    aes(tooltip = paste0(provincia, "\n",
+                         casos, " casos", 
+                         " al ", day(fecha), " de ", 
+                         month(fecha, label=TRUE, abbr=FALSE)),
+      data_id = provincia)) +
+  scale_x_date(date_breaks = "4 days", 
+               minor_breaks = NULL,
+               date_labels =  formato_fecha) +
+  scale_fill_brewer(palette = "Set2") +
+  theme_light() +
+  labs(x = "",
+       y = "Casos reportados",
+       fill = "",
+       title = "",
+       subtitle = "") +
+  theme(axis.text.x=element_text(angle=60, hjust=1),
+        legend.position="bottom", legend.box = "horizontal", 
+        plot.margin = unit(c(5,0,0,0), "mm"),
+        legend.key.width = unit(2,"mm"),
+        legend.key.size = unit(5, "mm")) +
+  guides(color = guide_legend(nrow = 1))
 
+girafe(ggobj = g_prov,
+       options = list(
+         opts_tooltip(use_fill = TRUE),
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:NULL;stroke:NULL;")),
+       width_svg = 6, height_svg = 3.5)
+```
 
-### Evolución cantonal de los casos
-
+### Evolución de casos por cantón
 ```{r, echo = FALSE, fig.align="center"}
 cant_heatmap <- as.data.table(cantones_tidy_mapa)
 setorder(cant_heatmap, -canton)
@@ -696,6 +692,6 @@ girafe(ggobj = plot_grid(g_cant_1_g, g_cant_2_g, rel_widths = c(1, .75)),
        width_svg = 8, height_svg = 10)
 ```
 
-Elaborado por gds506_at_gmail.com con datos diarios del [CSSE del John Hopkins University](https://github.com/CSSEGISandData/COVID-19) y del Ministerio de Salud de Costa Rica. 
-Los datos del Ministerio de Salud son tomados del [sitio de Wikipedia del COVID-19 de Costa Rica](https://en.wikipedia.org/wiki/2020_coronavirus_pandemic_in_Costa_Rica).
+Elaborado por gds506@gmail.com con datos diarios del [CSSE del John Hopkins University](https://github.com/CSSEGISandData/COVID-19) y del Ministerio de Salud de Costa Rica. 
+
 
