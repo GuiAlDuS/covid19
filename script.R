@@ -1,8 +1,16 @@
 library(data.table)
 library(countrycode)
 library(lubridate)
+library(stringr)
 
 Sys.setlocale(locale="es_ES.UTF-8")
+fecha_hoy <- as.character(Sys.Date())
+#fecha_hoy <- "2020-04-03"
+fecha_hoy_mod <- paste(month(fecha_hoy), 
+                       day(fecha_hoy), 
+                       str_extract(year(fecha_hoy), ".{2}$"), 
+                       sep = "/")
+
 covid19_contagios <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv", header=T)[
   , tipo := "contagios"
 ]
@@ -15,21 +23,28 @@ covid19_decesos <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID
   , tipo := "decesos"
 ]
 
-covid19 <- rbindlist(list(covid19_contagios, covid19_decesos, covid19_recuperados))
+covid19 <- rbindlist(list(covid19_contagios, covid19_decesos, covid19_recuperados))[
+  , `:=`(cod_pais = countrycode(`Country/Region`, 
+                                origin = "country.name", destination = "iso3c"),
+         pais = countrycode(`Country/Region`, 
+                            origin = "country.name", destination = "un.name.es"),
+         continente = countrycode(`Country/Region`,
+                                  origin = "country.name", destination = "continent"),
+         region = countrycode(`Country/Region`,
+                              origin = "country.name", destination = "region"))
+][, `:=`(`Province/State` = NULL,
+         `Country/Region` = NULL,
+         Lat = NULL,
+         Long = NULL
+         )]
+
+setcolorder(covid19, c("pais", "cod_pais", "continente", "region", "tipo"))
 
 covid19_tidy <- melt(covid19,
-                     id.vars = c("Province/State", "Country/Region", "Lat", "Long", "tipo"),
+                     id.vars = c("pais", "cod_pais", "continente", "region", "tipo"),
                      variable.name = "fecha",
                      value.name = "casos")[
-                       , `:=`(fecha = mdy(fecha),
-                              cod_pais = countrycode(`Country/Region`, 
-                                                     origin = "country.name", destination = "iso3c"),
-                              pais = countrycode(`Country/Region`, 
-                                                 origin = "country.name", destination = "un.name.es"),
-                              continente = countrycode(`Country/Region`,
-                                                       origin = "country.name", destination = "continent"),
-                              region = countrycode(`Country/Region`,
-                                                   origin = "country.name", destination = "region"))
+                       , fecha := mdy(fecha)
                      ]
 
 cntry_list <- unique(covid19_tidy$`Country/Region`)
@@ -39,7 +54,7 @@ paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Peru", "Brazil", "Ch
 t_cntrys <- covid19_tidy[continente == "Americas"
 ][
   , .(casos = sum(casos, na.rm = T)),
-  by = c("Country/Region", "fecha", "tipo", "cod_pais", "pais", "continente", "region") 
+  by = c("fecha", "pais", "cod_pais", "continente", "region", "tipo") 
 ][
   , ID := seq_len(.N)
 ]
@@ -50,28 +65,89 @@ library(ggplot2)
 library(scales)
 library(ggiraph)
 library(ggrepel)
+library(sf)
+library(rnaturalearth)
+library(rnaturalearthdata)
+
+world <- ne_countries(scale = "medium", returnclass = "sf")[,"iso_a3"]
+
+breaks_mapa = c(1, 10, 100, 1000, 10000, 100000, 1000000)
+
+americas_mapa <- covid19_tidy[continente == "Americas"
+  ][
+    , .(casos = sum(casos, na.rm = T)),
+    by = c("fecha", "pais", "cod_pais", "continente", "region", "tipo") 
+  ][
+    , ID := seq_len(.N)
+  ]
+
+setorder(americas_mapa, pais, tipo, fecha)
+
+americas_mapa <- americas_mapa[
+    ,`:=`(nuevos_casos = casos - shift(casos, fill = 0),
+         prct_dif_casos = round((casos - shift(casos, fill = 0))/(shift(casos, fill = 0))*100, 1)),
+    , by = c("pais", "cod_pais", "continente", "region", "tipo")
+  ][
+    fecha == fecha_hoy
+  ][
+    is.nan(prct_dif_casos), prct_dif_casos := 0
+  ]
+
+americas_mapa <- merge(world, americas_mapa, by.x = "iso_a3", by.y = "cod_pais", all=FALSE)
+library(ggthemes)
+
+ggplot() +
+  geom_sf(data = americas_mapa, aes(fill = casos), lwd = 0.1) +
+  coord_sf(crs = "+proj=aeqd +lat_0=0 +lon_0=-60 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs ") +
+  scale_fill_viridis_c(trans = "pseudo_log", 
+                       breaks = breaks_mapa, 
+                       label = label_number_si()) +
+  facet_grid(cols = vars(tipo)) +
+  theme_light() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        legend.title = element_text(size = 0),
+        legend.text = element_text(size = 8),
+        legend.position="bottom", legend.box = "horizontal") +
+  guides(fill = guide_colourbar(barwidth = 10, barheight = .6, label.vjust = -2))
+
+ggplot() +
+  geom_sf(data = americas_mapa, aes(fill = nuevos_casos), lwd = 0.1) +
+  coord_sf(crs = "+proj=aeqd +lat_0=0 +lon_0=-60 +x_0=0 +y_0=0 +datum=WGS84 +units=m +no_defs ") +
+  scale_fill_viridis_c(trans = "pseudo_log", 
+                       breaks = breaks_mapa, 
+                       label = label_number_si()) +
+  facet_grid(cols = vars(tipo)) +
+  theme_light() +
+  theme(axis.text.x = element_blank(),
+        axis.text.y = element_blank(),
+        legend.title = element_text(size = 0),
+        legend.text = element_text(size = 8),
+        legend.position="bottom", legend.box = "horizontal") +
+  guides(fill = guide_colourbar(barwidth = 10, barheight = .6, label.vjust = -2))
 
 g1 <- ggplot(t_cntrys[tipo == "contagios" & 
                         fecha >= fecha_min &
-                        `Country/Region` != "Costa Rica"], 
+                        pais != "Costa Rica"], 
        aes(x = fecha, y = casos, group = pais, col = region)) + 
-  # geom_point() +
-  geom_smooth(alpha = 0.5, size = 0.5, se = FALSE) +
-  geom_smooth(
-    data = t_cntrys[tipo == "contagios" & 
+  geom_line(size = 0.3, alpha = 0.5) + 
+  geom_line(
+    data = t_cntrys[tipo == "contagios" &
                fecha >= fecha_min &
-               `Country/Region` == "Costa Rica"],
-    aes(x = fecha, y = casos), 
-    size = 1.5, col = "red", se = FALSE
-  ) +
-  # scale_y_continuous(labels=comma) +
-  geom_label_repel(aes(label = `Country/Region`),
-                   nudge_x = 1,
-                   na.rm = TRUE) + 
-  scale_y_continuous(trans = "log10") +
+               pais == "Costa Rica"],
+    aes(x = fecha, y = casos),
+    size = 1, col = "green") +
+  # geom_label_repel(aes(label = `Country/Region`),
+  #                  nudge_x = 1,
+  #                  na.rm = TRUE) + 
+  scale_y_continuous(trans = "log10"
+                      , limits = c(10, max(t_cntrys$casos))
+                     ) +
   scale_x_date(date_breaks = "3 days", 
                minor_breaks = NULL,
-               date_labels = '%d de %B') +
+               date_labels = '%d de %B',
+               limits = c(dmy("03-03-2020", ymd(fecha_hoy))),
+               ) +
   # scale_colour_brewer(palette = "Dark2") +
   # scale_colour_viridis_d() + 
   theme_light() +
@@ -96,29 +172,35 @@ girafe(ggobj = g1_g,
 
 fecha_diauno <- t_cntrys[
   tipo == "contagios" & casos > 0 ][
-    , .SD[which.min(fecha)], by = "Country/Region" ][
-      , .(`Country/Region`,
+    , .SD[which.min(fecha)], by = "pais" ][
+      , .(pais,
           fecha_diauno = fecha)]
   
 t_gt_diauno <- fecha_diauno[
-  t_cntrys, on=c(`Country/Region` = "Country/Region") ][
+  t_cntrys, on=c(pais = "pais") ][
     fecha >= fecha_diauno][
-      order(`Country/Region`, tipo, fecha) ][
+      order(pais, tipo, fecha) ][
         casos > 0, 
         `:=`(num_dia = as.integer(difftime(fecha, fecha_diauno, units = "days") + 1),
              nuevos_casos = casos - shift(casos, fill = 0),
              prct_dif_casos = round((casos - shift(casos, fill = 0))/(shift(casos, fill = NA))*100, 1)), 
-        by = c("Country/Region", "tipo", "cod_pais", "pais") ]
+        by = c("pais", "tipo", "cod_pais", "pais") ]
 
 t_gt_diauno[is.na(t_gt_diauno)] <- 0
 
-max_dia_CR <- max(t_gt_diauno[`Country/Region` == "Costa Rica" & tipo == "contagios", num_dia])
+max_dia_CR <- max(t_gt_diauno[pais == "Costa Rica" & tipo == "contagios", num_dia])
 
 g2 <- ggplot(t_gt_diauno[num_dia <= max_dia_CR & tipo == "contagios"], 
-       aes(x = num_dia, y = casos, group = pais, col = pais, )) + 
-  geom_line(linetype = 2, size = 0.5, alpha = 0.5) +
-  geom_point(size = 1, alpha = 0.7) +
-  scale_y_continuous() +
+       aes(x = num_dia, y = casos, group = pais, col = region, )) + 
+  geom_line(linetype = 1, size = 0.5, alpha = 0.4) +
+  geom_line(
+    data = t_gt_diauno[num_dia <= max_dia_CR & tipo == "contagios" & pais == "Costa Rica"],
+    aes(x = num_dia, y = casos), 
+    size = 1, col = "blue"
+  )
+  #geom_point(size = 0.1, alpha = 0.7) +
+  scale_y_continuous(trans = "log10") +
+  #scale_y_continuous() +
   scale_x_continuous(minor_breaks = NULL) + 
   #geom_smooth(method="lm", formula= (y ~ exp(2)), se=FALSE, color=1) +
   scale_colour_brewer(palette = "Dark2") +
@@ -235,9 +317,8 @@ g5 <- ggplot(t_gt_diauno[tipo == "contagios" &
 ############
 ############
 
-cantones_uned <- fread("http://geovision.uned.ac.cr/oges/archivos_covid/04_03/04_03_CSV.csv")
-
-cantones_uned$provincia <- iconv(cantones_uned$provincia, "macintosh", "UTF-8")
+url_cant_uned <- paste0("http://geovision.uned.ac.cr/oges/archivos_covid/","")
+cantones_uned <- fread("http://geovision.uned.ac.cr/oges/archivos_covid/04_09/04_09_CSV.csv")
 
 cols <- c("provincia", "canton")
 
@@ -255,7 +336,7 @@ cantones_tidy <- melt(cantones_uned,
                         , `:=`(fecha = dmy(fecha))
                       ]
 
-# dt_cantones <- fread("2020-03-30_cantones.csv")
+# dt_cantones <- fread("2020-04-04_cantones.csv")
 
 setorder(cantones_tidy, -canton, fecha)
 
@@ -347,9 +428,17 @@ library(lwgeom)
 
 cantones <- st_read("WFS:http://geos.snitcr.go.cr/be/IGN_5/wfs?", "IGN_5:limitecantonal_5k")
 
-cantones_simp <- st_simplify(cantones, preserveTopology = TRUE, dTolerance = 100)
+cantones_simp <- rmapshaper::ms_simplify(cantones, keep = 0.05, keep_shapes = TRUE)
+cantones_simp <- rmapshaper::ms_filter_islands(cantones_simp, min_area = 5000*10000)
+cantones_simp <- st_transform(cantones_simp, crs = 4326)
+cantones_simp <-  st_cast(cantones_simp,"POLYGON")
+#cantones_simp_spoly$area <- as.numeric(st_area(cantones_simp_spoly))/10000
+# cantones_simp_1 <- cantones_simp_spoly[cantones_simp_spoly$area > 200,]
 
-st_write(cantones_simp, "cantones_simp.gpkg")
+ggplot(cantones_simp) + geom_sf(aes(fill = objectid))
+
+st_write(cantones_simp, "cantones.geojson")
+
 cantones_simp <- st_read("cantones.geojson")
 
 cantones_tidy_mapa <- cantones_tidy[
