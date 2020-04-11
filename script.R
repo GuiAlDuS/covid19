@@ -428,7 +428,7 @@ library(lwgeom)
 
 cantones <- st_read("WFS:http://geos.snitcr.go.cr/be/IGN_5/wfs?", "IGN_5:limitecantonal_5k")
 
-cantones_simp <- rmapshaper::ms_simplify(cantones, keep = 0.05, keep_shapes = TRUE)
+cantones_simp <- rmapshaper::ms_simplify(cantones, keep = 0.005, keep_shapes = TRUE)
 cantones_simp <- rmapshaper::ms_filter_islands(cantones_simp, min_area = 5000*10000)
 cantones_simp <- st_transform(cantones_simp, crs = 4326)
 cantones_simp <-  st_cast(cantones_simp,"POLYGON")
