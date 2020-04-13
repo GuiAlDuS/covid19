@@ -1,6 +1,9 @@
 ---
 title: "COVID-19 en Costa Rica"
-output: html_document
+output: 
+  html_document:
+    toc: true
+    toc_float: true
 ---
 
 ```{r setup, include=FALSE}
@@ -14,11 +17,15 @@ library(cowplot)
 library(sf)
 library(readxl)   
 library(httr)
+library(RColorBrewer)
 
 Sys.setlocale(locale="es_ES.UTF-8")
 formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
 #fecha_hoy <- "2020-04-09"
+
+paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Honduras",
+            "Peru", "Chile", "Uruguay", "Cuba", "Ecuador", "Mexico")
 
 fun_cantones_resumen <- function(fecha_hoy){
   URL_excel <- paste0("http://geovision.uned.ac.cr/oges/archivos_covid/", 
@@ -81,7 +88,7 @@ fun_cantones_resumen <- function(fecha_hoy){
   return(cant_resum)
 }
 
-fun_paises <- function(fecha_hoy){
+fun_paises <- function(fecha_hoy, paises){
   covid19_contagios <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv", header=T)[
     , tipo := "contagios"
   ]
@@ -107,8 +114,6 @@ fun_paises <- function(fecha_hoy){
                                                    origin = "country.name", destination = "un.name.es"))
                        ]
   
-  paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Peru", "Brazil", "Chile", "Uruguay")
-  
   t_cntrys <- covid19_tidy[`Country/Region` %in% paises
   ][
     , .(casos = sum(casos, na.rm = T)),
@@ -120,7 +125,7 @@ fun_paises <- function(fecha_hoy){
   return(t_cntrys)
 }
 
-t_cntrys <- fun_paises(fecha_hoy)
+t_cntrys <- fun_paises(fecha_hoy, paises)
 fecha_min <- t_cntrys[casos == 1, .SD[which.min(fecha)]]$fecha
 
 fecha_diauno <- t_cntrys[
@@ -183,20 +188,23 @@ CR_detalles <- cant_resumen$resumen
 ### Costa Rica en la región
 
 ```{r, echo = FALSE, fig.align="center"}
+col_paises <- colorRampPalette(brewer.pal(12, "Paired"))(length(paises))
+
+
 g1 <- ggplot(t_cntrys[tipo == "contagios" & 
                         #fecha >= fecha_min & 
                         fecha >= dmy("08/03/2020") &
                         casos > 0], 
        aes(x = fecha, y = casos, group = pais, col = pais)) + 
   geom_line(alpha = 0.5) +
-  geom_point(size = 1, alpha = 0.7) +
+  geom_point(size = 0.7, alpha = 0.7) +
   # scale_y_continuous(labels=comma) +
   scale_y_continuous(trans = "log10") +
   scale_x_date(date_breaks = "4 days", 
                minor_breaks = NULL,
                date_labels = formato_fecha) +
-  scale_colour_brewer(palette = "Dark2") +
-  #scale_colour_viridis_d() + 
+  # scale_colour_brewer(palette = "Dark2") +
+  scale_color_manual(values = col_paises) +
   theme_light() +
   labs(x = "",
        y = "Casos reportados",
@@ -218,11 +226,12 @@ g1_g <- g1 +
 g2 <- ggplot(t_gt_diauno[num_dia <= max_dia_CR & tipo == "contagios"], 
        aes(x = num_dia, y = casos, group = pais, col = pais, )) + 
   geom_line(linetype = 2, size = 0.5, alpha = 0.5) +
-  geom_point(size = 1, alpha = 0.7) +
+  geom_point(size = 0.7, alpha = 0.7) +
   scale_y_continuous() +
   scale_x_continuous(minor_breaks = NULL) + 
   #geom_smooth(method="lm", formula= (y ~ exp(2)), se=FALSE, color=1) +
-  scale_colour_brewer(palette = "Dark2") +
+  # scale_colour_brewer(palette = "Dark2") +
+  scale_color_manual(values = col_paises) +
   theme_light() +
   labs(x = "Días luego de primera detección",
        y = "Casos reportados",
@@ -241,29 +250,6 @@ g2_g <- g2 +
     casos," casos"), 
     data_id = ID), size = 0.75)
 
-g3 <- ggplot(t_gt_diauno[tipo == "contagios"], 
-       aes(x = fecha, y = `Country/Region`, fill = nuevos_casos)) +
-  geom_tile(width=.9, height=.8) +
-  # scale_y_continuous(breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1))))) +
-  scale_x_date(date_breaks = "4 days", 
-               minor_breaks = NULL,
-               date_labels =  formato_fecha) +
-  theme_light() +
-  # xlim(1, max_dia_CR) +
-  scale_fill_viridis_c(trans = "pseudo_log", breaks = breaks, labels = breaks) +
-  labs(x = "",
-       y = "",
-       fill = "Num. casos",
-       title = "Evolución de pandemia por país",
-       subtitle = "Nuevos casos diarios") +
-  theme(axis.text.x=element_text(angle=60, hjust=1))
-
-g3_g <- g3 + geom_tile_interactive(
-  aes(tooltip = paste0(
-    pais, "\n", 
-    paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-    nuevos_casos," casos")), width=.9, height=.8)
-
 g4 <- ggplot(tb_general[tipo == "contagios" & 
                           #fecha >= fecha_min &
                           fecha >= dmy("08/03/2020")], 
@@ -274,8 +260,8 @@ g4 <- ggplot(tb_general[tipo == "contagios" &
   scale_x_date(date_breaks = "4 days", 
                minor_breaks = NULL,
                date_labels =  formato_fecha) +
-  scale_colour_brewer(palette = "Dark2") +
-  #scale_colour_viridis_d() + 
+  # scale_colour_brewer(palette = "Dark2") +
+  scale_color_manual(values = col_paises) +
   theme_light() +
   labs(x = "",
        y = "Casos por cada 100,000 habitantes",
@@ -296,10 +282,10 @@ g4_g <- g4 +
 
 legend_paises <- get_legend(
   g1 + 
-    guides(color = guide_legend(nrow = 1)) +
+    guides(color = guide_legend(nrow = 2)) +
     theme(legend.position = "bottom",
-          plot.margin = unit(c(0,0,0,0), "mm"))
-)
+          # legend.box="vertical", legend.margin=margin(),
+          plot.margin = unit(c(0,0,0,0), "mm")))
 
 alineados <- align_plots(g1_g, g2_g, legend_paises, align = 'v', axis = 'l')
 linea_2 <- alineados[[2]]
@@ -429,7 +415,21 @@ scale_fill_branded_d <- function(
   )
 }
 
+scale_col_branded_d <- function(
+  primary = "blue", 
+  other = "grey", 
+  direction = 1, 
+  ...
+) {
+  ggplot2::discrete_scale(
+    "colour", "branded", 
+    branded_pal(primary, other, direction), 
+    ...
+  )
+}
+
 scale_fill_branded_d <- scale_fill_branded_d
+scale_col_branded_d <- scale_col_branded_d
 
 edades <- CR_detalles[info %in% c("Adultos", "Adultos Mayores", "Menores") &
                         fecha > lubridate::dmy("09/3/2020")]
@@ -439,26 +439,60 @@ sexo <- CR_detalles[info %in% c("Mujeres", "Hombres") &
                         fecha > lubridate::dmy("09/3/2020")]
 
 g_edades <- ggplot(edades,
-       aes(x = fecha, y = casos, group = info, fill = info)) +
-  geom_col_interactive(
+       aes(x = fecha, y = casos, group = info, col = info)) +
+  geom_line() +
+  geom_point_interactive(
     aes(tooltip = paste0(
       paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n",
       info, "\n",
       casos," casos"), 
       data_id = ID),
-    position = position_dodge()) + 
+    size = 0.5) + 
   scale_y_continuous(limits = c(0, NA),
-                     expand = c(0,2)) +
+                     expand = c(0,3)) +
   scale_x_date(date_breaks = "1 week", 
                minor_breaks = NULL,
                date_labels = formato_fecha) +
   theme_light() +
   labs(x = "",
-       y = "Casos",
-       fill = "Edades") + 
+       y = "Casos acumulados",
+       col = "") + 
   theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.key.width = unit(2,"mm"),
-        plot.margin = unit(c(3,0,0,0), "mm"))
+        # legend.key.width = unit(2,"mm"),
+        legend.background = element_rect(fill=NULL, 
+                                  size=0.5, linetype="solid"),
+        legend.margin = unit(c(0,0,0,0), "mm"),
+        legend.position = c(0.25, 0.75), 
+        plot.margin = unit(c(5,5,0,0), "mm"))
+
+g_sexo <- ggplot(sexo, 
+       aes(x = fecha, y = casos, group = info, col = info)) +
+  geom_line() +
+  geom_point_interactive(
+    aes(tooltip = paste0(
+      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+      info, "\n",
+      casos," casos"), 
+      data_id = ID),
+    size = 0.5) +
+  scale_col_branded_d(primary = "grey",
+                       other = "orange") +
+  scale_y_continuous(limits = c(0, NA),
+                     expand = c(0,3)) +
+  scale_x_date(date_breaks = "1 week", 
+               minor_breaks = NULL,
+               date_labels = formato_fecha) +
+  theme_light() +
+  labs(x = "",
+       y = "Casos acumulados",
+       col = "") + 
+  theme(axis.text.x=element_text(angle=60, hjust=1),
+        # legend.key.width = unit(2,"mm"),
+        # legend.text = element_text(size=6),
+        legend.margin = unit(c(0,0,0,0), "mm"),
+        # legend.position = "bottom",
+        legend.position = c(0.2, 0.8), 
+        plot.margin = unit(c(5,0,0,5), "mm"))
 
 g_hospi <- ggplot(hospitalizacion,
                   aes(x = fecha, y = casos, group = info, fill = info)) +
@@ -470,51 +504,36 @@ g_hospi <- ggplot(hospitalizacion,
       data_id = ID),
     position = position_dodge()) + 
   scale_fill_branded_d(other = "#a2d729") +
-  scale_x_date(date_breaks = "1 week", 
+  scale_x_date(date_breaks = "4 days", 
                minor_breaks = NULL,
-               date_labels = formato_fecha) +
+               date_labels = formato_fecha,
+               limits = c(lubridate::dmy("30-3-2020"), NA)) +
   scale_y_continuous(limits = c(0, NA),
                      expand = c(0,0.2)) +
   theme_light() +
   labs(x = "",
-       y = "Casos",
-       fill = "Hospitalización") + 
+       y = "Casos al día",
+       fill = "Hospitalización:") + 
   theme(axis.text.x=element_text(angle=60, hjust=1),
         legend.key.width = unit(2,"mm"),
-        plot.margin = unit(c(0,0,0,0), "mm"))
+        legend.position = "bottom",
+        plot.margin = unit(c(1,1,1,1), "mm"))
 
-g_sexo <- ggplot(sexo, 
-       aes(x = fecha, y = casos, group = info, fill = info)) +
-  geom_col_interactive(
-    aes(tooltip = paste0(
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-      info, "\n",
-      casos," casos"), 
-      data_id = ID),
-    position = position_dodge()) +
-  scale_fill_branded_d(primary = "grey",
-                       other = "orange") +
-  scale_y_continuous(limits = c(0, NA),
-                     expand = c(0,2)) +
-  scale_x_date(date_breaks = "1 week", 
-               minor_breaks = NULL,
-               date_labels = formato_fecha) +
-  theme_light() +
-  labs(x = "",
-       y = "Casos",
-       fill = "Sexo") + 
-  theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.key.width = unit(2,"mm"),
-        plot.margin = unit(c(0,0,0,0), "mm"))
+# alineados <- align_plots(g_edades, g_sexo, g_hospi, align = 'hv', axis = 'rl')
 
-alineados <- align_plots(g_edades, g_sexo, g_hospi, align = 'hv', axis = 'rl')
-
-girafe(ggobj = plot_grid(alineados[[1]], alineados[[2]], alineados[[3]], ncol = 1),
+girafe(ggobj = plot_grid(g_edades, g_sexo, ncol = 2),
        options = list(
          opts_tooltip(use_fill = TRUE),
          opts_toolbar(saveaspng = FALSE),
          opts_hover(css = "fill:NULL;stroke:NULL;")),
-       width_svg = 6.5, height_svg = 7)
+       width_svg = 6.5, height_svg = 3)
+
+girafe(ggobj = g_hospi,
+       options = list(
+         opts_tooltip(use_fill = TRUE),
+         opts_toolbar(saveaspng = FALSE),
+         opts_hover(css = "fill:NULL;stroke:NULL;")),
+       width_svg = 6.5, height_svg = 3)
 
 ```
 
@@ -692,6 +711,6 @@ girafe(ggobj = plot_grid(g_cant_1_g, g_cant_2_g, rel_widths = c(1, .75)),
        width_svg = 8, height_svg = 10)
 ```
 
-Elaborado por gds506@gmail.com con datos diarios del [CSSE del John Hopkins University](https://github.com/CSSEGISandData/COVID-19) y del Ministerio de Salud de Costa Rica. 
+Elaborado por gds506@gmail.com con datos diarios del [CSSE del John Hopkins University](https://github.com/CSSEGISandData/COVID-19) y del [Ministerio de Salud de Costa Rica](http://geovision.uned.ac.cr/oges/). 
 
 
