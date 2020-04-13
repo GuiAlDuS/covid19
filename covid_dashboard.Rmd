@@ -24,7 +24,7 @@ formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
 #fecha_hoy <- "2020-04-09"
 
-paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Honduras",
+paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Honduras", "Dominican Republic",
             "Peru", "Chile", "Uruguay", "Cuba", "Ecuador", "Mexico")
 
 fun_cantones_resumen <- function(fecha_hoy){
@@ -188,7 +188,11 @@ CR_detalles <- cant_resumen$resumen
 ### Costa Rica en la región
 
 ```{r, echo = FALSE, fig.align="center"}
-col_paises <- colorRampPalette(brewer.pal(12, "Paired"))(length(paises))
+cols <- c("#a6cee3", "#1f78b4", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c",
+"#fdbf6f", "#ff7f00", "#cab2d6", "#6a3d9a","#CDBE70" ,"#b15928")
+# brewer.pal(12, "Paired")
+
+col_paises <- colorRampPalette(cols)(length(paises))
 
 
 g1 <- ggplot(t_cntrys[tipo == "contagios" & 
@@ -299,9 +303,10 @@ girafe(ggobj = plot_grid(
   combinado,
   ncol = 1, rel_heights = c(.1, 2)),
   options = list(opts_tooltip(use_fill = TRUE,
-                              offx = 10, offy = 10),
+                              offx = 10, offy = 10,
+                              css = "color:white;"),
                  opts_hover(css = "stroke:orange;
-                 stroke-width:2"),
+                 stroke-width:2;"),
                  opts_toolbar(saveaspng = FALSE)),
   width_svg = 8, height_svg = 8)
 
