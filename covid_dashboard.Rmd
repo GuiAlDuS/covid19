@@ -60,13 +60,14 @@ fun_cantones_resumen <- function(fecha_hoy){
                                function(X) read_excel(
                                  tf, sheet = X, skip = 2, col_names = TRUE))
   
+  resumen_datos_list <- lapply(resumen_datos_list, function(x) x[!is.na(x$"...2"), ])
+  
   resumen_datos <- as.data.table(do.call(cbind, resumen_datos_list))
   resumen_col_vec <- like(colnames(resumen_datos), "\\d{4}$")
   resumen_col_vec[2] <- TRUE
   resumen_datos <- resumen_datos[1:26, ..resumen_col_vec]
   setnames(resumen_datos, 1, "info")
   
-  resumen_datos <- na.omit(resumen_datos, cols = "info")
   resumen_datos[resumen_datos == "nd"] <- NA
   resumen_datos <- resumen_datos[, lapply(.SD, as.numeric), by=info]
   resumen_datos <- melt(resumen_datos,
