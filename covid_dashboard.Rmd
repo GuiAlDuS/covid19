@@ -16,27 +16,26 @@ library(sf)
 library(readxl)   
 library(httr)
 library(RColorBrewer)
-library(tabulizer)
 
 Sys.setlocale(locale="es_ES.UTF-8")
 formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
-#fecha_hoy <- "2020-04-09"
+#fecha_hoy <- "2020-04-18"
 
 paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Honduras", "Dominican Republic",
             "Peru", "Chile", "Uruguay", "Cuba", "Ecuador", "Mexico")
 
 fun_paises <- function(fecha_hoy, paises){
   covid19_contagios <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv", header=T)[
-    , tipo := "contagios"
+    , tipo := "Confirmados"
   ]
   
   covid19_recuperados <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv", header=T)[
-    , tipo := "recuperados"
+    , tipo := "Recuperados"
   ]
   
   covid19_decesos <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv", header=T)[
-    , tipo := "decesos"
+    , tipo := "Fallecidos"
   ]
   
   covid19 <- rbindlist(list(covid19_contagios, covid19_decesos, covid19_recuperados))
@@ -90,6 +89,9 @@ fun_cantones_resumen <- function(fecha_hoy){
   ][
     nuevos_casos < 0, nuevos_casos := 0
   ]
+  cantones_recuperados <- fun_recuperados(fecha_hoy)
+  cantones_datos <- merge(cantones_datos, cantones_recuperados, by = c("canton", "fecha"), all.x = TRUE)
+  cantones_datos[, `:=`(activos = fifelse(is.na(recuperados), casos, casos - recuperados))]
   
   resumen_d_vec <- like(sheets, "^\\d_\\w*")
   resumen_datos_list <- lapply(sheets[resumen_d_vec],
@@ -125,33 +127,33 @@ fun_cantones_resumen <- function(fecha_hoy){
   return(cant_resum)
 }
 
-fun_cantones_recuperados <- function(fecha_hoy){
-  fecha_ayer <- as.character(as.character(Sys.Date() - lubridate::days(1)))
-  url_pdf <- paste0("http://geovision.uned.ac.cr/oges/archivos_covid/", 
-                   substr(fecha_hoy, 6, 7), "_", substr(fecha_hoy, 9, 10), "/",
-                   substr(fecha_hoy, 6, 7), "_", substr(fecha_hoy, 9, 10),"_COMUNIC.pdf")
-  area <- list()
-  area[[1]] <- c(3200, 61, 3952, 1170)
-  t <- extract_tables(url_pdf,
-                      guess = FALSE,
-                      area = area,
-                      output = "data.frame")
-  recuperados_raw <- d2[[1]][c(6:nrow(d2[[1]])),]
-  recuperados1 <- recuperados_raw[,1:2]
-  recuperados2 <- recuperados_raw[, c(4,6)]
-  setnames(recuperados1, c(1,2), c("canton", "recuperados"))
-  setnames(recuperados2, c(1,2), c("canton", "recuperados"))
-  recuperados <- rbind(recuperados1, recuperados2)
-  recuperados <- as.data.table(recuperados)
-  recuperados <- recuperados[canton != ''][
-    , fecha := lubridate::ymd(fecha_hoy) - lubridate::days(1)]
+fun_recuperados <- function(fecha_hoy){
+  URL_excel_recup <- paste0("http://geovision.uned.ac.cr/oges/archivos_covid/", 
+                      substr(fecha_hoy, 6, 7), "_", substr(fecha_hoy, 9, 10), "/",
+                      substr(fecha_hoy, 6, 7), "_", substr(fecha_hoy, 9, 10),"_EXCEL_RECUP.xlsx")
   
-  recuperados_historico <- fread(paste0("recuperados_", fecha_ayer, ".csv"))
-  recuperados_actual <- rbindlist(list(recuperados, recuperados_historico))
+  GET(URL_excel_recup, write_disk(tf <- tempfile(fileext = ".xlsx")))
+  sheets <- excel_sheets(tf)
   
-  fwrite(recuperados_historico, paste0("recuperados_", fecha_hoy, ".csv"))
+  cantones_d_vec <- like(sheets, "^\\d")
   
-  return(recuperados_actual)
+  cantones_recuperados_list <- lapply(sheets[cantones_d_vec], 
+                                function(X) read_excel(
+                                  tf, sheet = X, range = "B5:C86", col_names = c("canton", "recuperados")))
+  names(cantones_recuperados_list) <- sheets[cantones_d_vec]
+  
+  cantones_recuperados <- rbindlist(cantones_recuperados_list, idcol = "fecha")
+  cantones_recuperados[, fecha := lubridate::ymd(
+    paste(
+      year(Sys.Date()),
+      substr(fecha,1, 2), 
+      substr(fecha,4, 5),
+      sep = "/"))]
+  cantones_recuperados <- cantones_recuperados[recuperados > 0]
+  
+  #falta incluir diferencias entre fechas
+  
+  return(cantones_recuperados)
 }
 
 ```
@@ -161,7 +163,7 @@ t_cntrys <- fun_paises(fecha_hoy, paises)
 fecha_min <- t_cntrys[casos == 1, .SD[which.min(fecha)]]$fecha
 
 fecha_diauno <- t_cntrys[
-  tipo == "contagios" & casos > 0 ][
+  tipo == "Confirmados" & casos > 0 ][
     , .SD[which.min(fecha)], by = "Country/Region" ][
       , .(`Country/Region`,
           fecha_diauno = fecha)]
@@ -178,7 +180,7 @@ t_gt_diauno <- fecha_diauno[
 
 t_gt_diauno[is.na(t_gt_diauno)] <- 0
 
-max_dia_CR <- max(t_gt_diauno[`Country/Region` == "Costa Rica" & tipo == "contagios", num_dia])
+max_dia_CR <- max(t_gt_diauno[`Country/Region` == "Costa Rica" & tipo == "Confirmados", num_dia])
 
 setorder(t_gt_diauno, -`Country/Region`, fecha)
 t_gt_diauno$`Country/Region` <- factor(t_gt_diauno$`Country/Region`, 
@@ -204,7 +206,9 @@ cantones_simp <- st_read("cantones.geojson")
 cantones_tidy_mapa <- merge(cantones_simp, cantones_tidy, by = "canton")
 
 provincias = merge(cantones_tidy, cantones_simp, by = "canton")[
-  , .(casos = sum(casos)), by = c("provincia", "fecha")
+  , .(casos = sum(casos),
+      recuperados = sum(recuperados, na.rm = TRUE),
+      activos = sum(activos)), by = c("provincia", "fecha")
 ][
   , max_casos := max(casos), by = c("provincia")
 ]
@@ -219,10 +223,9 @@ CR_detalles <- cant_resumen$resumen
 
 
 ## Costa Rica en la región {.tabset}
+### Casos acumulados
 
-### Casos
-
-```{r, echo = FALSE, fig.align="center"}
+```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
 cols <- c("#a6cee3", "#1f78b4", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c",
 "#fdbf6f", "#ff7f00", "#cab2d6", "#6a3d9a","#CDBE70" ,"#b15928")
 # brewer.pal(12, "Paired")
@@ -230,19 +233,28 @@ cols <- c("#a6cee3", "#1f78b4", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c",
 col_paises <- colorRampPalette(cols)(length(paises))
 
 
-g1 <- ggplot(t_cntrys[tipo == "contagios" & 
-                        #fecha >= fecha_min & 
-                        fecha >= dmy("08/03/2020") &
-                        casos > 0], 
-       aes(x = fecha, y = casos, group = pais, col = pais)) + 
+g1_g <- ggplot(t_cntrys[
+  #fecha >= fecha_min & 
+  fecha >= dmy("08/03/2020") &
+    casos > 0][
+      tipo == "contagios" & casos < 20, casos := NA], 
+  aes(x = fecha, y = casos, group = pais, col = pais)) + 
   geom_line(alpha = 0.5) +
+  geom_point_interactive(
+    aes(tooltip = paste0(
+      pais, "\n", 
+      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+      casos," casos"),
+      data_id = ID),
+    size = 0.5, alpha = 0.7) +
   # scale_y_continuous(labels=comma) +
   scale_y_continuous(trans = "log10") +
-  scale_x_date(date_breaks = "4 days", 
+  scale_x_date(date_breaks = "1 week", 
                minor_breaks = NULL,
                date_labels = formato_fecha) +
   # scale_colour_brewer(palette = "Dark2") +
   scale_color_manual(values = col_paises) +
+  facet_grid(rows = vars(tipo), scales = "free") +
   theme_light() +
   labs(x = "",
        y = "Casos reportados",
@@ -250,26 +262,39 @@ g1 <- ggplot(t_cntrys[tipo == "contagios" &
        title = "",
        subtitle = "") +
   theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.position = "none",
+        legend.position = "right",
         plot.margin = unit(c(0,5,0,0), "mm"))
 
-g1_g <- g1 + 
+girafe(ggobj = g1_g,
+       options = list(opts_tooltip(use_fill = TRUE,
+                                   offx = 10, offy = 10,
+                                   css = "color:white;"),
+                      opts_hover(css = "stroke:orange;
+                 stroke-width:2;"),
+                 opts_toolbar(saveaspng = FALSE)),
+       width_svg = 7, height_svg = 5)
+
+```
+
+### Casos desde el día 1
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
+g2_g <- ggplot(t_gt_diauno[num_dia <= max_dia_CR + 5], 
+             aes(x = num_dia, y = casos, group = pais, col = pais, )) + 
+  geom_line(size = 0.5, alpha = 0.5) +
   geom_point_interactive(
     aes(tooltip = paste0(
-      pais, "\n", 
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-      casos," casos"),
-      data_id = ID),
-    size = 0.5, alpha = 0.7)
-
-g2 <- ggplot(t_gt_diauno[num_dia <= max_dia_CR + 5 & tipo == "contagios"], 
-       aes(x = num_dia, y = casos, group = pais, col = pais, )) + 
-  geom_line(linetype = 2, size = 0.5, alpha = 0.5) +
+    pais, "\n", 
+    paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+    casos," casos"), 
+    data_id = ID),
+    size = 0.5, alpha = 0.7) +
   scale_y_continuous() +
-  scale_x_continuous(minor_breaks = NULL) + 
+  scale_x_continuous(minor_breaks = NULL, limits = c(15, NA)) + 
   #geom_smooth(method="lm", formula= (y ~ exp(2)), se=FALSE, color=1) +
   # scale_colour_brewer(palette = "Dark2") +
   scale_color_manual(values = col_paises) +
+  facet_grid(rows = vars(tipo), scale = "free") + 
   theme_light() +
   labs(x = "Días luego de primera detección",
        y = "Casos reportados",
@@ -277,29 +302,40 @@ g2 <- ggplot(t_gt_diauno[num_dia <= max_dia_CR + 5 & tipo == "contagios"],
        title = "",
        subtitle = "") +
   # guides(color = guide_legend(nrow = 1)) +
-  theme(legend.position = "none",
+  theme(legend.position = "right",
         plot.margin = unit(c(0,0,0,0), "mm"))
 
-g2_g <- g2 + 
+girafe(ggobj = g2_g,
+       options = list(opts_tooltip(use_fill = TRUE,
+                                   offx = 10, offy = 10,
+                                   css = "color:white;"),
+                      opts_hover(css = "stroke:orange;
+                 stroke-width:2;"),
+                 opts_toolbar(saveaspng = FALSE)),
+       width_svg = 7, height_svg = 5)
+```
+
+### Casos por 100 mil habitantes
+
+```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
+g4_g <- ggplot(tb_general[#fecha >= fecha_min &
+                          fecha >= dmy("20/03/2020")], 
+             aes(x = fecha, y = casos_10k, group = pais, col = pais)) + 
+  geom_line(alpha = 0.7) +
   geom_point_interactive(
     aes(tooltip = paste0(
-    pais, "\n", 
-    paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-    casos," casos"), 
-    data_id = ID),
-    size = 0.5, alpha = 0.7)
-
-g4 <- ggplot(tb_general[tipo == "contagios" & 
-                          #fecha >= fecha_min &
-                          fecha >= dmy("08/03/2020")], 
-       aes(x = fecha, y = casos_10k, group = pais, col = pais)) + 
-  geom_line(alpha = 0.7) +
+      pais, "\n", 
+      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+      round(casos_10k,1)," casos/100k hab."),
+      data_id = ID),
+    size = 0.5, alpha = 0.7) + 
   #scale_y_continuous(trans = "log10") +
-  scale_x_date(date_breaks = "4 days", 
+  scale_x_date(date_breaks = "1 week", 
                minor_breaks = NULL,
                date_labels =  formato_fecha) +
   # scale_colour_brewer(palette = "Dark2") +
   scale_color_manual(values = col_paises) +
+  facet_grid(rows = vars(tipo), scale = "free") + 
   theme_light() +
   labs(x = "",
        y = "Casos por cada 100,000 habitantes",
@@ -307,285 +343,22 @@ g4 <- ggplot(tb_general[tipo == "contagios" &
        title = "",
        subtitle = "") +
   theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.position = "none",
+        legend.position = "right",
         plot.margin = unit(c(0,0,0,5), "mm"))
 
-g4_g <- g4 + 
-  geom_point_interactive(
-    aes(tooltip = paste0(
-      pais, "\n", 
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-      round(casos_10k,1)," casos/100k hab."),
-      data_id = ID),
-    size = 0.5, alpha = 0.7)
-
-legend_paises <- get_legend(
-  g1 + 
-    guides(color = guide_legend(nrow = 2)) +
-    theme(legend.position = "bottom",
-          # legend.box="vertical", legend.margin=margin(),
-          plot.margin = unit(c(0,0,0,0), "mm")))
-
-alineados <- align_plots(g1_g, g2_g, legend_paises, align = 'v', axis = 'l')
-linea_2 <- alineados[[2]]
-
-combinado <- plot_grid(
-  plot_grid(alineados[[1]], g4_g), linea_2,
-  ncol = 1, rel_heights = c(1, 1))
-
-girafe(ggobj = plot_grid(
-  alineados[[3]],
-  combinado,
-  ncol = 1, rel_heights = c(.1, 2)),
-  options = list(opts_tooltip(use_fill = TRUE,
-                              offx = 10, offy = 10,
-                              css = "color:white;"),
-                 opts_hover(css = "stroke:orange;
+girafe(ggobj = g4_g,
+       options = list(opts_tooltip(use_fill = TRUE,
+                                   offx = 10, offy = 10,
+                                   css = "color:white;"),
+                      opts_hover(css = "stroke:orange;
                  stroke-width:2;"),
                  opts_toolbar(saveaspng = FALSE)),
-  width_svg = 8, height_svg = 8)
-
-```
-
-### Decesos
-
-```{r echo = FALSE, fig.align="center"}
-g1 <- ggplot(t_cntrys[tipo == "decesos" & 
-                        #fecha >= fecha_min & 
-                        fecha >= dmy("08/03/2020") &
-                        casos > 0], 
-       aes(x = fecha, y = casos, group = pais, col = pais)) + 
-  geom_line(alpha = 0.5) +
-  # scale_y_continuous(labels=comma) +
-  scale_y_continuous(trans = "log10") +
-  scale_x_date(date_breaks = "4 days", 
-               minor_breaks = NULL,
-               date_labels = formato_fecha) +
-  # scale_colour_brewer(palette = "Dark2") +
-  scale_color_manual(values = col_paises) +
-  theme_light() +
-  labs(x = "",
-       y = "Decesos reportados",
-       col = "",
-       title = "",
-       subtitle = "") +
-  theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.position = "none",
-        plot.margin = unit(c(0,5,0,0), "mm"))
-
-g1_g <- g1 + 
-  geom_point_interactive(
-    aes(tooltip = paste0(
-      pais, "\n", 
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-      casos," casos"),
-      data_id = ID),
-    size = 0.5, alpha = 0.7)
-
-g2 <- ggplot(t_gt_diauno[num_dia <= max_dia_CR + 5 & tipo == "decesos"], 
-       aes(x = num_dia, y = casos, group = pais, col = pais, )) + 
-  geom_line(linetype = 2, size = 0.5, alpha = 0.5) +
-  scale_y_continuous() +
-  scale_x_continuous(minor_breaks = NULL) + 
-  #geom_smooth(method="lm", formula= (y ~ exp(2)), se=FALSE, color=1) +
-  # scale_colour_brewer(palette = "Dark2") +
-  scale_color_manual(values = col_paises) +
-  theme_light() +
-  labs(x = "Días luego de primera detección",
-       y = "Decesos reportados",
-       col = "",
-       title = "",
-       subtitle = "") +
-  # guides(color = guide_legend(nrow = 1)) +
-  theme(legend.position = "none",
-        plot.margin = unit(c(0,0,0,0), "mm"))
-
-g2_g <- g2 + 
-  geom_point_interactive(
-    aes(tooltip = paste0(
-    pais, "\n", 
-    paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-    casos," casos"), 
-    data_id = ID),
-    size = 0.5, alpha = 0.7)
-
-g4 <- ggplot(tb_general[tipo == "decesos" & 
-                          #fecha >= fecha_min &
-                          fecha >= dmy("08/03/2020")], 
-       aes(x = fecha, y = casos_10k, group = pais, col = pais)) + 
-  geom_line(alpha = 0.7) +
-  #scale_y_continuous(trans = "log10") +
-  scale_x_date(date_breaks = "4 days", 
-               minor_breaks = NULL,
-               date_labels =  formato_fecha) +
-  # scale_colour_brewer(palette = "Dark2") +
-  scale_color_manual(values = col_paises) +
-  theme_light() +
-  labs(x = "",
-       y = "Decesos por cada 100,000 habitantes",
-       col = "",
-       title = "",
-       subtitle = "") +
-  theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.position = "none",
-        plot.margin = unit(c(0,0,0,5), "mm"))
-
-g4_g <- g4 + 
-  geom_point_interactive(
-    aes(tooltip = paste0(
-      pais, "\n", 
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-      round(casos_10k,1)," decesos/100k hab."),
-      data_id = ID),
-    size = 0.5, alpha = 0.7)
-
-legend_paises <- get_legend(
-  g1 + 
-    guides(color = guide_legend(nrow = 2)) +
-    theme(legend.position = "bottom",
-          # legend.box="vertical", legend.margin=margin(),
-          plot.margin = unit(c(0,0,0,0), "mm")))
-
-alineados <- align_plots(g1_g, g2_g, legend_paises, align = 'v', axis = 'l')
-linea_2 <- alineados[[2]]
-
-combinado <- plot_grid(
-  plot_grid(alineados[[1]], g4_g), linea_2,
-  ncol = 1, rel_heights = c(1, 1))
-
-girafe(ggobj = plot_grid(
-  alineados[[3]],
-  combinado,
-  ncol = 1, rel_heights = c(.1, 2)),
-  options = list(opts_tooltip(use_fill = TRUE,
-                              offx = 10, offy = 10,
-                              css = "color:white;"),
-                 opts_hover(css = "stroke:orange;
-                 stroke-width:2;"),
-                 opts_toolbar(saveaspng = FALSE)),
-  width_svg = 8, height_svg = 8)
-```
-
-### Recuperados
-
-```{r echo = FALSE, fig.align="center"}
-g1 <- ggplot(t_cntrys[tipo == "recuperados" & 
-                        #fecha >= fecha_min & 
-                        fecha >= dmy("08/03/2020") &
-                        casos > 0], 
-       aes(x = fecha, y = casos, group = pais, col = pais)) + 
-  geom_line(alpha = 0.5) +
-  # scale_y_continuous(labels=comma) +
-  scale_y_continuous(trans = "log10") +
-  scale_x_date(date_breaks = "4 days", 
-               minor_breaks = NULL,
-               date_labels = formato_fecha) +
-  # scale_colour_brewer(palette = "Dark2") +
-  scale_color_manual(values = col_paises) +
-  theme_light() +
-  labs(x = "",
-       y = "Recuperados reportados",
-       col = "",
-       title = "",
-       subtitle = "") +
-  theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.position = "none",
-        plot.margin = unit(c(0,5,0,0), "mm"))
-
-g1_g <- g1 + 
-  geom_point_interactive(
-    aes(tooltip = paste0(
-      pais, "\n", 
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-      casos," casos"),
-      data_id = ID),
-    size = 0.5, alpha = 0.7)
-
-g2 <- ggplot(t_gt_diauno[num_dia <= max_dia_CR + 5 & tipo == "recuperados"], 
-       aes(x = num_dia, y = casos, group = pais, col = pais, )) + 
-  geom_line(linetype = 2, size = 0.5, alpha = 0.5) +
-  scale_y_continuous() +
-  scale_x_continuous(minor_breaks = NULL) + 
-  #geom_smooth(method="lm", formula= (y ~ exp(2)), se=FALSE, color=1) +
-  # scale_colour_brewer(palette = "Dark2") +
-  scale_color_manual(values = col_paises) +
-  theme_light() +
-  labs(x = "Días luego de primera detección",
-       y = "Recuperados reportados",
-       col = "",
-       title = "",
-       subtitle = "") +
-  # guides(color = guide_legend(nrow = 1)) +
-  theme(legend.position = "none",
-        plot.margin = unit(c(0,0,0,0), "mm"))
-
-g2_g <- g2 + 
-  geom_point_interactive(
-    aes(tooltip = paste0(
-    pais, "\n", 
-    paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-    casos," casos"), 
-    data_id = ID),
-    size = 0.5, alpha = 0.7)
-
-g4 <- ggplot(tb_general[tipo == "recuperados" & 
-                          #fecha >= fecha_min &
-                          fecha >= dmy("08/03/2020")], 
-       aes(x = fecha, y = casos_10k, group = pais, col = pais)) + 
-  geom_line(alpha = 0.7) +
-  #scale_y_continuous(trans = "log10") +
-  scale_x_date(date_breaks = "4 days", 
-               minor_breaks = NULL,
-               date_labels =  formato_fecha) +
-  # scale_colour_brewer(palette = "Dark2") +
-  scale_color_manual(values = col_paises) +
-  theme_light() +
-  labs(x = "",
-       y = "Recuperados por cada 100,000 hab.",
-       col = "",
-       title = "",
-       subtitle = "") +
-  theme(axis.text.x=element_text(angle=60, hjust=1),
-        legend.position = "none",
-        plot.margin = unit(c(0,0,0,5), "mm"))
-
-g4_g <- g4 + 
-  geom_point_interactive(
-    aes(tooltip = paste0(
-      pais, "\n", 
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-      round(casos_10k,1)," recuperados/100k hab."),
-      data_id = ID),
-    size = 0.5, alpha = 0.7)
-
-legend_paises <- get_legend(
-  g1 + 
-    guides(color = guide_legend(nrow = 2)) +
-    theme(legend.position = "bottom",
-          # legend.box="vertical", legend.margin=margin(),
-          plot.margin = unit(c(0,0,0,0), "mm")))
-
-alineados <- align_plots(g1_g, g2_g, legend_paises, align = 'v', axis = 'l')
-linea_2 <- alineados[[2]]
-
-combinado <- plot_grid(
-  plot_grid(alineados[[1]], g4_g), linea_2,
-  ncol = 1, rel_heights = c(1, 1))
-
-girafe(ggobj = plot_grid(
-  alineados[[3]],
-  combinado,
-  ncol = 1, rel_heights = c(.1, 2)),
-  options = list(opts_tooltip(use_fill = TRUE,
-                              offx = 10, offy = 10,
-                              css = "color:white;"),
-                 opts_hover(css = "stroke:orange;
-                 stroke-width:2;"),
-                 opts_toolbar(saveaspng = FALSE)),
-  width_svg = 8, height_svg = 8)
+       width_svg = 7, height_svg = 5)
 ```
 
 ## {-}
+
+***
 
 ## Casos en Costa Rica
 
@@ -776,13 +549,14 @@ g_sexo <- ggplot(sexo,
 
 g_hospi <- ggplot(hospitalizacion,
                   aes(x = fecha, y = casos, group = info, fill = info)) +
+  # geom_col(position = position_dodge()) + 
   geom_col_interactive(
     aes(tooltip = paste0(
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n",
       info, "\n",
-      casos," casos"), 
+      casos," casos"),
       data_id = ID),
-    position = position_dodge()) + 
+    position = position_dodge()) +
   scale_fill_branded_d(other = "#a2d729") +
   scale_x_date(date_breaks = "4 days", 
                minor_breaks = NULL,
@@ -810,15 +584,16 @@ girafe(ggobj = plot_grid(g_edades, g_sexo, ncol = 2),
 
 girafe(ggobj = g_hospi,
        options = list(
-         opts_tooltip(use_fill = TRUE),
-         opts_toolbar(saveaspng = FALSE),
-         opts_hover(css = "fill:NULL;stroke:NULL;")),
+         opts_toolbar(saveaspng = FALSE)),
        width_svg = 6.5, height_svg = 3)
 
 ```
 
-### Casos por cantón y provincia
+### Casos activos por cantón y provincia
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
+##Agregar los activos último día al siguiente paso
+library(ggsflabel)
+
 cant_geo <- cantones_tidy_mapa[
   cantones_tidy_mapa$fecha == fecha_hoy & 
     !is.na(cantones_tidy_mapa$casos) & 
@@ -836,27 +611,40 @@ provincias_mapa <-  merge(provincias_geo, provincias[fecha == fecha_hoy, ], by =
 
 g_mapa <- ggplot() +
   geom_sf(data = cantones_simp, fill = "gray", col = "white", lwd = 0.2, alpha = 0.5) +
-  geom_sf(data = provincias_mapa, fill = NA, col = "white", lwd = 0.7) +
-  geom_sf_text(data = provincias_mapa, aes(label = paste0(provincia, "\n",
-                                                          casos, " casos")),
-               alpha = 0.6,
-               size = 2,
-               check_overlap = TRUE) +
+  geom_sf(data = provincias_mapa, fill = NA, col = "white", lwd = 0.6) +
+  geom_sf_text_repel(data = provincias_mapa, 
+                     aes(label = paste0(provincia, "\n",
+                                        casos, " acumulados\n",
+                                        activos, " activos")),
+                     alpha = 0.8,
+                     size = 2,
+                     check_overlap = TRUE,
+                     point.padding = NA) +
   geom_sf_interactive(data = cant_geo_cntrids, 
-                      aes(size = casos,
+                      aes(size = activos,
+                          col = casos,
                           tooltip = paste0("Provincia: ", provincia, "\n",
                                            "Cantón: ", canton, "\n",
-                                           "Casos totales: ", casos),
+                                           "Casos totales: ", casos, "\n",
+                                           "Casos activos: ", activos),
                           data_id = ID),
-                      col = "red", alpha = 0.3) +
+                      alpha = 0.5) +
   coord_sf(datum = NA) +
+  scale_size_continuous(trans = 'reverse') +
+  scale_color_gradient(low = "blue", high = "red", na.value = NA) + 
+  # scale_color_viridis_c(trans = "pseudo_log") +
   theme_light() + 
   labs(x = "",
        y = "",
-       size = "Casos",
+       size = "Casos activos",
        title = "",
-       subtitle = "") +
-  theme(panel.border = element_blank()) +
+       subtitle = "",
+       color = "Casos acumulados") +
+  theme(panel.border = element_blank(),
+        legend.title=element_text(size=9),
+        legend.text=element_text(size=7)) +
+  guides(size = guide_legend(reverse = TRUE),
+         color = guide_colourbar(barwidth = .7, barheight = 5)) +
   scale_size_area()
 
 girafe(ggobj = g_mapa,
