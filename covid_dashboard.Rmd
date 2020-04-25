@@ -648,12 +648,16 @@ girafe(ggobj = g_mapa,
 
 ```
 
-### Evolución de casos activos por provincia
+### Evolución de casos acumulados por provincia
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
-g_prov <- ggplot(provincias, aes(x = fecha, y = positivos, fill = provincia)) +
+g_prov <- ggplot(melt(provincias[, .(provincia, fecha, positivos, recuperados, activos)],
+                      id.vars = c("provincia", "fecha"),
+                      variable.name = "tipo",
+                      value.name = "casos"), 
+                 aes(x = fecha, y = casos, fill = provincia)) +
   geom_col_interactive(
     aes(tooltip = paste0(provincia, "\n",
-                         positivos, " casos", 
+                         casos, " casos", 
                          " al ", day(fecha), " de ", 
                          month(fecha, label=TRUE, abbr=FALSE)),
       data_id = provincia)) +
@@ -661,6 +665,7 @@ g_prov <- ggplot(provincias, aes(x = fecha, y = positivos, fill = provincia)) +
                minor_breaks = NULL,
                date_labels =  formato_fecha) +
   scale_fill_brewer(palette = "Set2") +
+  facet_grid(rows = vars(tipo), scales = "free") +
   theme_light() +
   labs(x = "",
        y = "Casos reportados",
@@ -679,8 +684,10 @@ girafe(ggobj = g_prov,
          opts_tooltip(use_fill = TRUE),
          opts_toolbar(saveaspng = FALSE),
          opts_hover(css = "fill:NULL;stroke:NULL;")),
-       width_svg = 6, height_svg = 3.5)
+       width_svg = 6, height_svg = 5)
 ```
+
+* Notese que para el 17 de abril hubo un faltante en los datos de personas recuperadas. 
 
 ### Evolución de casos por cantón
 ```{r, echo = FALSE, fig.align="center"}
@@ -697,7 +704,7 @@ g_cant_1 <- ggplot(cant_heatmap,
        aes(x = fecha, y = canton, fill = positivos)) + 
   geom_tile(width=1, height=.8) +
   #geom_point(size = 0.4) +
-  scale_x_date(date_breaks = "1 week", 
+  scale_x_date(date_breaks = "10 days", 
                minor_breaks = NULL,
                date_labels = formato_fecha,
                #limits = c(min(cantones_tidy$fecha), ymd(fecha_hoy)),
@@ -736,7 +743,7 @@ g_cant_2 <- ggplot(cant_heatmap,
            fill = nuevos_positivos)) + 
   geom_tile(width=1, height=.8) +
   #geom_point(size = 0.4) +
-  scale_x_date(date_breaks = "1 week", 
+  scale_x_date(date_breaks = "10 days", 
                minor_breaks = NULL,
                date_labels = formato_fecha,
                #limits = c(min(cantones_tidy$fecha), ymd(fecha_hoy)),
