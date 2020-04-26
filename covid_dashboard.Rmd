@@ -22,29 +22,40 @@ library(RColorBrewer)
 Sys.setlocale(locale="es_ES.UTF-8")
 formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
-#fecha_hoy <- "2020-04-22"
+#fecha_hoy <- "2020-04-25"
 
 paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Honduras", "Dominican Republic",
             "Peru", "Chile", "Uruguay", "Cuba", "Ecuador", "Mexico")
 
 fun_paises <- function(fecha_hoy, paises){
   covid19_contagios <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv", header=T)[
-    , tipo := "Positivos"
+    , tipo := "positivos"
   ]
   
   covid19_recuperados <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_recovered_global.csv", header=T)[
-    , tipo := "Recuperados"
+    , tipo := "recuperados"
   ]
   
   covid19_decesos <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_deaths_global.csv", header=T)[
-    , tipo := "Fallecidos"
+    , tipo := "fallecidos"
   ]
   
   covid19 <- rbindlist(list(covid19_contagios, covid19_decesos, covid19_recuperados))
-  
-  covid19_tidy <- melt(covid19,
-                       id.vars = c("Province/State", "Country/Region", "Lat", "Long", "tipo"),
+  covid19_1 <- melt(covid19,
+                       id.vars = c("Province/State", "Country/Region", "Lat", "Long", 
+                                   "tipo"),
                        variable.name = "fecha",
+                       value.name = "casos")[
+                         , casos := as.integer(casos)]
+  
+  covid19_2 <- dcast(covid19_1, 
+                      `Province/State` + `Country/Region` + Lat + Long + fecha ~ tipo, 
+                      value.var = "casos")[
+                        , activos := positivos - fallecidos - recuperados]
+  
+  covid19_tidy <- melt(covid19_2,
+                       id.vars = c("Province/State", "Country/Region", "Lat", "Long", "fecha"),
+                       variable.name = "tipo",
                        value.name = "casos")[
                          , `:=`(fecha = mdy(fecha),
                                 cod_pais = countrycode(`Country/Region`, 
@@ -126,7 +137,9 @@ fun_cantones_resumen <- function(fecha_hoy){
   resumen_tidy[
     , `:=`(nuevos = casos - shift(casos, n = 1L, fill = 0, type = "lag"),
            ID = seq_len(.N)), 
-    by = variable]
+    by = variable][
+      , ID_2 := seq_len(.N)
+    ]
   
   cant_resum <- list()
   cant_resum$resumen <- resumen_tidy
@@ -142,7 +155,7 @@ t_cntrys <- fun_paises(fecha_hoy, paises)
 fecha_min <- t_cntrys[casos == 1, .SD[which.min(fecha)]]$fecha
 
 fecha_diauno <- t_cntrys[
-  tipo == "Positivos" & casos > 0 ][
+  tipo == "positivos" & casos > 0 ][
     , .SD[which.min(fecha)], by = "Country/Region" ][
       , .(`Country/Region`,
           fecha_diauno = fecha)]
@@ -159,13 +172,13 @@ t_gt_diauno <- fecha_diauno[
 
 t_gt_diauno[is.na(t_gt_diauno)] <- 0
 
-max_dia_CR <- max(t_gt_diauno[`Country/Region` == "Costa Rica" & tipo == "Positivos", num_dia])
+max_dia_CR <- max(t_gt_diauno[`Country/Region` == "Costa Rica" & tipo == "positivos", num_dia])
 
 setorder(t_gt_diauno, -`Country/Region`, fecha)
 t_gt_diauno$`Country/Region` <- factor(t_gt_diauno$`Country/Region`, 
                                        levels=unique(t_gt_diauno$`Country/Region`))
 
-breaks = c(1, 10, 100, 1000)
+#breaks = c(1, 10, 100, 1000)
 
 poblacion <- fread("WPP2019_TotalPopulationBySex.csv")[
   Time == 2020 & Variant == "Medium",
@@ -183,9 +196,8 @@ cantones_tidy <- cant_resumen$cantones
 cantones_simp <- st_read("cantones.geojson")
 
 cantones_mapa <- merge(cantones_simp, 
-                       dcast(cantones_tidy,  fecha + provincia + canton ~ tipo , value.var = "casos")[
-                         , ID := seq_len(.N)
-                       ], by = c("canton", "provincia"))
+                       dcast(cantones_tidy,  fecha + provincia + canton ~ tipo, value.var = "casos")
+                       , by = c("canton", "provincia"))
 
 provincias = cantones_tidy[
   , .(positivos = sum(casos[tipo == "positivos"], na.rm = TRUE),
@@ -202,6 +214,9 @@ setorder(provincias, provincia)
 provincias$provincia <- factor(provincias$provincia, levels=unique(provincias$provincia))
 
 CR_detalles <- cant_resumen$resumen
+CR_detalles[fecha == lubridate::ymd("2020-04-26") & variable == "fallecidos",
+            `:=`(casos = shift(casos),
+                 nuevos = 0)]
 ```
 
 
@@ -342,6 +357,9 @@ girafe(ggobj = g4_g,
 
 ## {-}
 
+* Los casos activos se calculan como: 
+<div align="center">$activos = positivos - fallecidos - recuperados$</div>
+
 ***
 
 ## Casos en Costa Rica
@@ -354,7 +372,7 @@ v_resumenDiario_CR <- ggplot(
         aes(tooltip = paste0(day(fecha), " de ", 
                          month(fecha, label=TRUE, abbr=FALSE), "\n", 
                          nuevos, " casos"),
-      data_id = ID)) +
+      data_id = ID_2)) +
   facet_grid(rows = vars(variable), scales = "free") +
   scale_y_continuous(breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1))))) +
   scale_x_date(date_breaks = "1 week", 
@@ -377,7 +395,7 @@ v_resumenAcum_CR <- ggplot(
     aes(tooltip = paste0(day(fecha), " de ", 
                          month(fecha, label=TRUE, abbr=FALSE), "\n", 
                          casos, " casos"),
-        data_id = ID),
+        data_id = ID_2),
     size = 0.5) +
   facet_grid(rows = vars(variable), scales = "free") +
   scale_y_continuous(breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1))))) +
@@ -401,8 +419,6 @@ girafe(ggobj = plot_grid(v_resumenAcum_CR, v_resumenDiario_CR),
        )
 
 ```
-
-* Los casos activos se calculan como: $activos = positivos - fallecidos - recuperados$
 
 * Tener valores *activos negativos* en casos por día, significa que ese día hubo más recuperados que casos positivos.
 
@@ -665,7 +681,7 @@ g_prov <- ggplot(melt(provincias[, .(provincia, fecha, positivos, recuperados, a
                minor_breaks = NULL,
                date_labels =  formato_fecha) +
   scale_fill_brewer(palette = "Set2") +
-  facet_grid(rows = vars(tipo), scales = "free") +
+  facet_grid(rows = vars(tipo)) +
   theme_light() +
   labs(x = "",
        y = "Casos reportados",
@@ -689,19 +705,28 @@ girafe(ggobj = g_prov,
 
 * Notese que para el 17 de abril hubo un faltante en los datos de personas recuperadas. 
 
-### Evolución de casos por cantón
+### Evolución de casos por cantón durante los últimos 30 días
 ```{r, echo = FALSE, fig.align="center"}
 cant_heatmap <- as.data.table(cantones_mapa)
 setorder(cant_heatmap, -canton, fecha)
-cant_heatmap<- cant_heatmap[, nuevos_positivos := positivos - shift(positivos, fill = 0), by = canton
-                            ][
-  nuevos_positivos < 0, nuevos_positivos := 0
+cant_heatmap <- cant_heatmap[
+  , .(canton, provincia, fecha, activos, positivos, recuperados)
+][ , 
+  `:=`(nuevos_positivos = positivos - shift(positivos, fill = 0),
+       nuevos_activos = activos - shift(activos, fill = 0)),
+  by = canton
+][ , 
+   `:=`(nuevos_activos = fifelse(nuevos_activos < 0 & recuperados == 0, 0, nuevos_activos),
+         nuevos_positivos = fifelse(nuevos_positivos < 0, 0, nuevos_positivos),
+        ID = seq_len(.N))
+][
+  fecha >= lubridate::ymd(fecha_hoy) - days(30)
 ]
 
 cant_heatmap$canton <- factor(cant_heatmap$canton, levels=unique(cant_heatmap$canton))
 
 g_cant_1 <- ggplot(cant_heatmap, 
-       aes(x = fecha, y = canton, fill = positivos)) + 
+       aes(x = fecha, y = canton, fill = activos)) + 
   geom_tile(width=1, height=.8) +
   #geom_point(size = 0.4) +
   scale_x_date(date_breaks = "10 days", 
@@ -716,7 +741,7 @@ g_cant_1 <- ggplot(cant_heatmap,
        y = "",
        fill = "",
        title = "",
-       subtitle = "Casos acumulados") +
+       subtitle = "Casos activos") +
   theme(#axis.text.x = element_text(angle=60, hjust=1),
         #axis.text.y = element_text(size = 5),
         legend.position="left", legend.box = "vertical",
@@ -733,7 +758,8 @@ g_cant_1_g <- g_cant_1 +
       "Cantón: ", canton, "\n",
       day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE), "\n", 
       positivos," casos totales", "\n",
-      nuevos_positivos," casos nuevos"),
+      nuevos_positivos," casos nuevos", "\n", 
+      activos, " casos activos"),
       data_id = ID), 
     width=1, height=.8)
 
@@ -756,7 +782,7 @@ g_cant_2 <- ggplot(cant_heatmap,
        y = "",
        fill = "",
        title = "",
-       subtitle = "Nuevos casos por día") +
+       subtitle = "Casos positivos nuevos") +
   theme(#axis.text.x = element_text(angle=60, hjust=0.5),
         axis.text.y=element_blank(),
         legend.position="right", legend.box = "vertical",
@@ -772,8 +798,10 @@ g_cant_2_g <- g_cant_2 +
       "Cantón: ", canton, "\n",
       day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE), "\n",
       positivos," casos totales", "\n",
-      nuevos_positivos," casos nuevos"),
-      data_id = ID), width=.9, height=.8)
+      nuevos_positivos," casos positivos nuevos", "\n",
+      nuevos_activos, " casos activos nuevos"),
+      data_id = ID), 
+    width=.9, height=.8)
 
 girafe(ggobj = plot_grid(g_cant_1_g, g_cant_2_g, rel_widths = c(1, .75)), 
        options = list(opts_toolbar(saveaspng = FALSE),
@@ -783,5 +811,7 @@ girafe(ggobj = plot_grid(g_cant_1_g, g_cant_2_g, rel_widths = c(1, .75)),
                       opts_tooltip(offx = 15, offy = 15)),
        width_svg = 8, height_svg = 10)
 ```
+
+******
 
 Elaborado por gds506@gmail.com con datos diarios del [CSSE del John Hopkins University](https://github.com/CSSEGISandData/COVID-19) y del [Ministerio de Salud de Costa Rica](http://geovision.uned.ac.cr/oges/). 
