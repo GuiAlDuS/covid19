@@ -1,6 +1,6 @@
 ---
 title: "COVID-19 en Costa Rica"
-date: "`r format(Sys.time(), '%I:%M:%S %p %d-%m-%Y')`"
+date: "`r format(Sys.time(), '%d-%m-%Y %I:%M:%S%p')`"
 author: gds506
 output: 
   html_document
@@ -22,9 +22,9 @@ library(RColorBrewer)
 Sys.setlocale(locale="es_ES.UTF-8")
 formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
-#fecha_hoy <- "2020-04-25"
+#fecha_hoy <- "2020-04-28"
 
-paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Honduras", "Dominican Republic",
+paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Dominican Republic",
             "Peru", "Chile", "Uruguay", "Cuba", "Ecuador", "Mexico")
 
 fun_paises <- function(fecha_hoy, paises){
@@ -78,6 +78,8 @@ fun_paises <- function(fecha_hoy, paises){
 fun_cantones_resumen <- function(fecha_hoy){
   tbl_tipo <- c("POSITIVOS", "RECUP", "FALLECIDOS", "GENERAL")
 
+  #http://geovision.uned.ac.cr/oges/archivos_covid/04_29/04_29_CSV_GENERAL.csv
+  #"http://geovision.uned.ac.cr/oges/archivos_covid/04_29/04_29_CSV_GENERAL.csv"  
   URLs <- paste0("http://geovision.uned.ac.cr/oges/archivos_covid/", 
                       substr(fecha_hoy, 6, 7), "_", substr(fecha_hoy, 9, 10), "/",
                       substr(fecha_hoy, 6, 7), "_", substr(fecha_hoy, 9, 10),
@@ -85,10 +87,11 @@ fun_cantones_resumen <- function(fecha_hoy){
   
   tbls <- lapply(URLs, fread)
   
-  positivos <- as.data.table(lapply(tbls[[1]], iconv, from = "macroman", to = "UTF-8" ))[, tipo := "positivos"]
-  recuperados <- as.data.table(lapply(tbls[[2]], iconv, from = "macroman", to = "UTF-8" ))[, tipo := "recuperados"]
-  fallecidos <- as.data.table(lapply(tbls[[3]], iconv, from = "macroman", to = "UTF-8" ))[, tipo := "fallecidos"]
-  general <- as.data.table(lapply(tbls[[4]], iconv, from = "macroman", to = "UTF-8" ))
+  csv_encoding <- "WINDOWS-1252" #"macroman"
+  positivos <- as.data.table(lapply(tbls[[1]], iconv, from = csv_encoding, to = "UTF-8" ))[, tipo := "positivos"]
+  recuperados <- as.data.table(lapply(tbls[[2]], iconv, from = csv_encoding, to = "UTF-8" ))[, tipo := "recuperados"]
+  fallecidos <- as.data.table(lapply(tbls[[3]], iconv, from = csv_encoding, to = "UTF-8" ))[, tipo := "fallecidos"]
+  general <- as.data.table(lapply(tbls[[4]], iconv, from = csv_encoding, to = "UTF-8" ))
   
   cantones <- rbindlist(list(positivos, recuperados, fallecidos), use.names=TRUE, fill = TRUE)
   
@@ -117,14 +120,15 @@ fun_cantones_resumen <- function(fecha_hoy){
   cantones_tidy <- cantones_tidy_2[canton %in% cantones_casos][
     , `:=`(nuevos = casos - shift(casos, n = 1L, fill = 0, type = "lag"),
            ID = seq_len(.N)), 
-    by = c("canton", "tipo")][
-      nuevos < 0, nuevos := 0
-    ]
+    by = c("canton", "tipo")]
+  # [
+  #     nuevos < 0, nuevos := 0
+  #   ]
   
   setnames(general, tolower(names(general)))
   resumen <- general[fecha != ""
   ][
-    , `:=`(fecha = dmy(fecha),
+    , `:=`(fecha = dmy(fecha), #as.Date(as.integer(fecha), origin = "1899-12-30"), 
            activos = as.integer(positivos) - as.integer(recuperados) - as.integer(fallecidos))]
   
   resumen_tidy <- melt(resumen,
@@ -178,8 +182,6 @@ setorder(t_gt_diauno, -`Country/Region`, fecha)
 t_gt_diauno$`Country/Region` <- factor(t_gt_diauno$`Country/Region`, 
                                        levels=unique(t_gt_diauno$`Country/Region`))
 
-#breaks = c(1, 10, 100, 1000)
-
 poblacion <- fread("WPP2019_TotalPopulationBySex.csv")[
   Time == 2020 & Variant == "Medium",
   .(Location, 
@@ -195,9 +197,8 @@ cantones_tidy <- cant_resumen$cantones
 
 cantones_simp <- st_read("cantones.geojson")
 
-cantones_mapa <- merge(cantones_simp, 
-                       dcast(cantones_tidy,  fecha + provincia + canton ~ tipo, value.var = "casos")
-                       , by = c("canton", "provincia"))
+cantones_mapa <- dcast(cantones_tidy,  fecha + provincia + canton ~ tipo, value.var = "casos")
+cantones_mapa_sf <- merge(cantones_simp, cantones_mapa, by = c("canton", "provincia"))
 
 provincias = cantones_tidy[
   , .(positivos = sum(casos[tipo == "positivos"], na.rm = TRUE),
@@ -601,10 +602,10 @@ girafe(ggobj = g_hospi,
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
 library(ggrepel)
 
-cant_geo <- cantones_mapa[
-  cantones_mapa$fecha == fecha_hoy & 
-    !is.na(cantones_mapa$positivos) & 
-    cantones_mapa$positivos > 0, ]
+cant_geo <- cantones_mapa_sf[
+  cantones_mapa_sf$fecha == fecha_hoy & 
+    !is.na(cantones_mapa_sf$positivos) & 
+    cantones_mapa_sf$positivos > 0, ]
 
 cant_geo_cntrids <- st_centroid(cant_geo)
 
@@ -634,7 +635,7 @@ g_mapa <- ggplot() +
                           col = positivos,
                           tooltip = paste0("Provincia: ", provincia, "\n",
                                            "Cantón: ", canton, "\n",
-                                           "Casos totales: ", positivos, "\n",
+                                           "Casos acumulados: ", positivos, "\n",
                                            "Casos activos: ", activos),
                           data_id = canton),
                       alpha = 0.5) +
@@ -705,9 +706,9 @@ girafe(ggobj = g_prov,
 
 * Notese que para el 17 de abril hubo un faltante en los datos de personas recuperadas. 
 
-### Evolución de casos por cantón durante los últimos 30 días
+### Evolución de casos por cantón durante los últimos 35 días
 ```{r, echo = FALSE, fig.align="center"}
-cant_heatmap <- as.data.table(cantones_mapa)
+cant_heatmap <- cantones_mapa
 setorder(cant_heatmap, -canton, fecha)
 cant_heatmap <- cant_heatmap[
   , .(canton, provincia, fecha, activos, positivos, recuperados)
@@ -717,10 +718,10 @@ cant_heatmap <- cant_heatmap[
   by = canton
 ][ , 
    `:=`(nuevos_activos = fifelse(nuevos_activos < 0 & recuperados == 0, 0, nuevos_activos),
-         nuevos_positivos = fifelse(nuevos_positivos < 0, 0, nuevos_positivos),
+         # nuevos_positivos = fifelse(nuevos_positivos < 0, 0, nuevos_positivos),
         ID = seq_len(.N))
 ][
-  fecha >= lubridate::ymd(fecha_hoy) - days(30)
+  fecha >= lubridate::ymd(fecha_hoy) - days(35)
 ]
 
 cant_heatmap$canton <- factor(cant_heatmap$canton, levels=unique(cant_heatmap$canton))
@@ -757,9 +758,9 @@ g_cant_1_g <- g_cant_1 +
       "Provincia: ", provincia, "\n",
       "Cantón: ", canton, "\n",
       day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE), "\n", 
-      positivos," casos totales", "\n",
-      nuevos_positivos," casos nuevos", "\n", 
-      activos, " casos activos"),
+      "Casos acumulados: ", positivos, "\n",
+      "Nuevos casos positivos: ", nuevos_positivos, "\n", 
+      "Casos activos: ", activos),
       data_id = ID), 
     width=1, height=.8)
 
@@ -797,9 +798,9 @@ g_cant_2_g <- g_cant_2 +
       "Provincia: ", provincia, "\n",
       "Cantón: ", canton, "\n",
       day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE), "\n",
-      positivos," casos totales", "\n",
-      nuevos_positivos," casos positivos nuevos", "\n",
-      nuevos_activos, " casos activos nuevos"),
+      "Casos acumulados: ", positivos, "\n",
+      "Nuevos casos positivos: ", nuevos_positivos, "\n",
+      "Casos activos nuevos: ", nuevos_activos),
       data_id = ID), 
     width=.9, height=.8)
 
@@ -811,6 +812,8 @@ girafe(ggobj = plot_grid(g_cant_1_g, g_cant_2_g, rel_widths = c(1, .75)),
                       opts_tooltip(offx = 15, offy = 15)),
        width_svg = 8, height_svg = 10)
 ```
+
+* Vale aclarar que en las tablas diarias cantonales que publica el Ministerio de Salud a veces se dan cambios en la cantidad de enfermos por cantón que no corresponden con cambios en el total de enfermos del país. Esto vendría siendo como si los enfermos se movilizaron a otro cantón, significando una reducción en el número de casos para el cantón donde salió y un incremento para el cantón donde ingresó. Intuyo que posiblemente estos cambios se deben a aclaraciones en los lugares de habitación. Menciono esto ya que en mis gráficos este "movimiento entre cantones" se muestra como casos positivos nuevos y casos negativos entre los cantones donde se dió el movimiento, pero que realmente no significan casos nuevos para el país ni recuperaciones.
 
 ******
 
