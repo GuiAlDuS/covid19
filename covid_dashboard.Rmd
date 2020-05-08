@@ -21,8 +21,8 @@ library(RColorBrewer)
 
 Sys.setlocale(locale="es_ES.UTF-8")
 formato_fecha <- "%d-%b"
-fecha_hoy <- as.character(Sys.Date())
-#fecha_hoy <- "2020-04-28"
+#fecha_hoy <- as.character(Sys.Date())
+fecha_hoy <- "2020-05-07"
 
 paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Dominican Republic",
             "Peru", "Chile", "Uruguay", "Cuba", "Ecuador", "Mexico")
@@ -85,13 +85,23 @@ fun_cantones_resumen <- function(fecha_hoy){
                       substr(fecha_hoy, 6, 7), "_", substr(fecha_hoy, 9, 10),
                 "_CSV_", tbl_tipo, ".csv")
   
-  tbls <- lapply(URLs, fread)
+  tbls <- lapply(URLs[c(1,2,3,4)], fread)
   
   csv_encoding <- "WINDOWS-1252" #"macroman"
-  positivos <- as.data.table(lapply(tbls[[1]], iconv, from = csv_encoding, to = "UTF-8" ))[, tipo := "positivos"]
-  recuperados <- as.data.table(lapply(tbls[[2]], iconv, from = csv_encoding, to = "UTF-8" ))[, tipo := "recuperados"]
-  fallecidos <- as.data.table(lapply(tbls[[3]], iconv, from = csv_encoding, to = "UTF-8" ))[, tipo := "fallecidos"]
-  general <- as.data.table(lapply(tbls[[4]], iconv, from = csv_encoding, to = "UTF-8" ))
+  positivos <- as.data.table(lapply(tbls[[1]], iconv, from = csv_encoding, to = "UTF-8" ))[
+    , tipo := "positivos"][
+      canton != "" | !is.na(canton)]
+  recuperados <- as.data.table(lapply(tbls[[2]], iconv, from = csv_encoding, to = "UTF-8" ))[
+    , tipo := "recuperados"][
+      canton != "" | !is.na(canton)]
+  fallecidos <- as.data.table(lapply(tbls[[3]], iconv, from = csv_encoding, to = "UTF-8" ))[
+  , tipo := "fallecidos"][
+    canton != "" | !is.na(canton)]
+  # fallecidos <- fread("05_04_CSV_FALLECIDOS_csv.csv")[
+  # , tipo := "fallecidos"][
+  #   canton != "" | !is.na(canton)]
+  general <- as.data.table(lapply(tbls[[4]], iconv, from = csv_encoding, to = "UTF-8" ))[
+    FECHA != ""]
   
   cantones <- rbindlist(list(positivos, recuperados, fallecidos), use.names=TRUE, fill = TRUE)
   
@@ -129,13 +139,21 @@ fun_cantones_resumen <- function(fecha_hoy){
   resumen <- general[fecha != ""
   ][
     , `:=`(fecha = dmy(fecha), #as.Date(as.integer(fecha), origin = "1899-12-30"), 
-           activos = as.integer(positivos) - as.integer(recuperados) - as.integer(fallecidos))]
+           activos = as.integer(positivos) - as.integer(recuperados) - as.integer(fallecidos),
+           `% pruebas +` = round(
+             as.integer(positivos)/(as.integer(descartados) + as.integer(positivos))*100, 1))]
+  
+  nuevas_prct_prb_pos <- resumen[, .(fecha, 
+                                     nuevas = round(
+                                       as.integer(nue_posi)/(as.integer(nue_descar) + as.integer(nue_posi))*100, 1))]
+  setorder(nuevas_prct_prb_pos, fecha)
+  nuevas_prct_prb_pos <- nuevas_prct_prb_pos$nuevas
   
   resumen_tidy <- melt(resumen,
                        id.vars = "fecha",
                        variable.name = "variable",
                        value.name = "casos")[
-                         , casos := as.integer(casos)
+                         , casos := as.numeric(casos)
                        ]
   setorder(resumen_tidy, variable, fecha)
   resumen_tidy[
@@ -144,6 +162,9 @@ fun_cantones_resumen <- function(fecha_hoy){
     by = variable][
       , ID_2 := seq_len(.N)
     ]
+  
+  resumen_tidy[variable == "% pruebas +", 
+               nuevos := nuevas_prct_prb_pos]
   
   cant_resum <- list()
   cant_resum$resumen <- resumen_tidy
@@ -367,12 +388,13 @@ girafe(ggobj = g4_g,
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
 v_resumenDiario_CR <- ggplot(
-  CR_detalles[ variable %in% c("positivos", "recuperados" , "fallecidos", "activos", "descartados")], 
+  CR_detalles[ variable %in% c("positivos", "recuperados" , "fallecidos", "activos", 
+                               "descartados", "% pruebas +")], 
   aes(x = fecha, y = nuevos)) +
   geom_col_interactive(
         aes(tooltip = paste0(day(fecha), " de ", 
                          month(fecha, label=TRUE, abbr=FALSE), "\n", 
-                         nuevos, " casos"),
+                         "valor: ", nuevos),
       data_id = ID_2)) +
   facet_grid(rows = vars(variable), scales = "free") +
   scale_y_continuous(breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1))))) +
@@ -381,21 +403,22 @@ v_resumenDiario_CR <- ggplot(
                date_labels =  formato_fecha) + 
   theme_light() +
   labs(x = "",
-       y = "Casos reportados al día",
-       title = "Casos por día") + 
+       y = "Valores reportados al día",
+       title = "Valores diarios") + 
     theme(axis.text.x=element_text(angle=60, hjust=1),
         # legend.position="bottom", legend.box = "horizontal", 
         plot.margin = unit(c(5,0,0,5), "mm"),
         strip.text.x = element_text(size = 5))
 
 v_resumenAcum_CR <- ggplot(
-  CR_detalles[ variable %in% c("positivos", "recuperados" , "fallecidos", "activos", "descartados")], 
+  CR_detalles[ variable %in% c("positivos", "recuperados" , "fallecidos", "activos", 
+                               "descartados", "% pruebas +")], 
   aes(x = fecha, y = casos)) +
   geom_line() +
   geom_point_interactive(
     aes(tooltip = paste0(day(fecha), " de ", 
                          month(fecha, label=TRUE, abbr=FALSE), "\n", 
-                         casos, " casos"),
+                         "valor: ", casos),
         data_id = ID_2),
     size = 0.5) +
   facet_grid(rows = vars(variable), scales = "free") +
@@ -405,8 +428,8 @@ v_resumenAcum_CR <- ggplot(
                date_labels =  formato_fecha) + 
   theme_light() +
   labs(x = "",
-       y = "Número de casos",
-       title = "Casos acumulados") + 
+       y = "Número total",
+       title = "Valores acumulados") + 
   theme(axis.text.x=element_text(angle=60, hjust=1),
         # legend.position="bottom", legend.box = "horizontal", 
         plot.margin = unit(c(5,5,0,0), "mm"),
@@ -416,7 +439,7 @@ girafe(ggobj = plot_grid(v_resumenAcum_CR, v_resumenDiario_CR),
        options = list(
           opts_toolbar(saveaspng = FALSE),
           opts_hover(css = "fill:orange;stroke:orange;stroke-width:1;")),
-       width_svg = 7, height_svg = 5
+       width_svg = 7, height_svg = 6
        )
 
 ```
@@ -718,7 +741,7 @@ cant_heatmap <- cant_heatmap[
   by = canton
 ][ , 
    `:=`(nuevos_activos = fifelse(nuevos_activos < 0 & recuperados == 0, 0, nuevos_activos),
-         # nuevos_positivos = fifelse(nuevos_positivos < 0, 0, nuevos_positivos),
+        nuevos_positivos = fifelse(nuevos_positivos < 0, 0, nuevos_positivos),
         ID = seq_len(.N))
 ][
   fecha >= lubridate::ymd(fecha_hoy) - days(35)
@@ -813,7 +836,7 @@ girafe(ggobj = plot_grid(g_cant_1_g, g_cant_2_g, rel_widths = c(1, .75)),
        width_svg = 8, height_svg = 10)
 ```
 
-* Vale aclarar que en las tablas diarias cantonales que publica el Ministerio de Salud a veces se dan cambios en la cantidad de enfermos por cantón que no corresponden con cambios en el total de enfermos del país. Esto vendría siendo como si los enfermos se movilizaron a otro cantón, significando una reducción en el número de casos para el cantón donde salió y un incremento para el cantón donde ingresó. Intuyo que posiblemente estos cambios se deben a aclaraciones en los lugares de habitación. Menciono esto ya que en mis gráficos este "movimiento entre cantones" se muestra como casos positivos nuevos y casos negativos entre los cantones donde se dió el movimiento, pero que realmente no significan casos nuevos para el país ni recuperaciones.
+* Vale aclarar que en las tablas diarias cantonales que publica el Ministerio de Salud a veces se dan cambios en la cantidad de enfermos por cantón que no corresponden con cambios en el total de enfermos del país. Esto vendría siendo como si los enfermos se movilizaron a otro cantón, significando una reducción en el número de casos para el cantón donde salió y un incremento para el cantón donde ingresó (tengo entendido que esto se da con aclaraciones del cantón de residencia del enfermo). En mi caso estoy convirtiendo esos "casos negativos" a cero, para que sea más fácil observar unicamente los cantones donde se dieron los nuevos casos.
 
 ******
 
