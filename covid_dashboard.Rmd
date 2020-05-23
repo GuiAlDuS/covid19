@@ -21,8 +21,8 @@ library(RColorBrewer)
 
 Sys.setlocale(locale="es_ES.UTF-8")
 formato_fecha <- "%d-%b"
-#fecha_hoy <- as.character(Sys.Date())
-fecha_hoy <- "2020-05-07"
+fecha_hoy <- as.character(Sys.Date())
+# fecha_hoy <- "2020-05-07"
 
 paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Dominican Republic",
             "Peru", "Chile", "Uruguay", "Cuba", "Ecuador", "Mexico")
@@ -87,7 +87,7 @@ fun_cantones_resumen <- function(fecha_hoy){
   
   tbls <- lapply(URLs[c(1,2,3,4)], fread)
   
-  csv_encoding <- "WINDOWS-1252" #"macroman"
+  csv_encoding <- "macroman" #"WINDOWS-1252"
   positivos <- as.data.table(lapply(tbls[[1]], iconv, from = csv_encoding, to = "UTF-8" ))[
     , tipo := "positivos"][
       canton != "" | !is.na(canton)]
@@ -138,7 +138,7 @@ fun_cantones_resumen <- function(fecha_hoy){
   setnames(general, tolower(names(general)))
   resumen <- general[fecha != ""
   ][
-    , `:=`(fecha = dmy(fecha), #as.Date(as.integer(fecha), origin = "1899-12-30"), 
+    , `:=`(fecha = dmy(fecha), #as.Date(as.integer(fecha), origin = "1899-12-30"),
            activos = as.integer(positivos) - as.integer(recuperados) - as.integer(fallecidos),
            `% pruebas +` = round(
              as.integer(positivos)/(as.integer(descartados) + as.integer(positivos))*100, 1))]
@@ -247,11 +247,12 @@ CR_detalles[fecha == lubridate::ymd("2020-04-26") & variable == "fallecidos",
 ### Casos acumulados
 
 ```{r, echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
-cols <- c("#a6cee3", "#1f78b4", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c",
-"#fdbf6f", "#ff7f00", "#cab2d6", "#6a3d9a","#CDBE70" ,"#b15928")
+# cols <- c("#a6cee3", "#1f78b4", "#b2df8a", "#33a02c", "#fb9a99", "#e31a1c",
+# "#fdbf6f", "#ff7f00", "#cab2d6", "#6a3d9a","#CDBE70" ,"#b15928")
 # brewer.pal(12, "Paired")
 
-col_paises <- colorRampPalette(cols)(length(paises))
+# col_paises <- colorRampPalette(cols)(length(paises))
+col_paises <- brewer.pal(length(paises), "Paired")
 
 
 g1_g <- ggplot(t_cntrys[
@@ -260,16 +261,15 @@ g1_g <- ggplot(t_cntrys[
     casos > 0][
       tipo == "contagios" & casos < 20, casos := NA], 
   aes(x = fecha, y = casos, group = pais, col = pais)) + 
-  geom_line(alpha = 0.5) +
-  geom_point_interactive(
-    aes(tooltip = paste0(
-      pais, "\n", 
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-      casos," casos"),
-      data_id = ID),
-    size = 0.5, alpha = 0.7) +
-  # scale_y_continuous(labels=comma) +
-  scale_y_continuous(trans = "log10") +
+  geom_line(alpha = 0.8) +
+  # geom_point_interactive(
+  #   aes(tooltip = paste0(
+  #     pais, "\n", 
+  #     paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+  #     casos," casos"),
+  #     data_id = ID),
+  #   size = 0.5, alpha = 0.7) +
+  scale_y_continuous(trans = "log10", labels=comma_format(accuracy = 1)) +
   scale_x_date(date_breaks = "1 week", 
                minor_breaks = NULL,
                date_labels = formato_fecha) +
@@ -287,12 +287,12 @@ g1_g <- ggplot(t_cntrys[
         plot.margin = unit(c(0,5,0,0), "mm"))
 
 girafe(ggobj = g1_g,
-       options = list(opts_tooltip(use_fill = TRUE,
-                                   offx = 10, offy = 10,
-                                   css = "color:white;"),
-                      opts_hover(css = "stroke:orange;
-                 stroke-width:2;"),
-                 opts_toolbar(saveaspng = FALSE)),
+       # options = list(opts_tooltip(use_fill = TRUE,
+       #                             offx = 10, offy = 10,
+       #                             css = "color:white;"),
+       #                opts_hover(css = "stroke:orange;
+       #           stroke-width:2;"),
+       #           opts_toolbar(saveaspng = FALSE)),
        width_svg = 7, height_svg = 5)
 
 ```
@@ -302,16 +302,16 @@ girafe(ggobj = g1_g,
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
 g2_g <- ggplot(t_gt_diauno[num_dia <= max_dia_CR + 5], 
              aes(x = num_dia, y = casos, group = pais, col = pais)) + 
-  geom_line(size = 0.5, alpha = 0.5) +
-  geom_point_interactive(
-    aes(tooltip = paste0(
-    pais, "\n", 
-    paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-    casos," casos"), 
-    data_id = ID),
-    size = 0.5, alpha = 0.7) +
-  scale_y_continuous() +
-  scale_x_continuous(minor_breaks = NULL, limits = c(15, NA)) + 
+  geom_line(size = 0.5, alpha = 0.8) +
+  # geom_point_interactive(
+  #   aes(tooltip = paste0(
+  #   pais, "\n", 
+  #   paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+  #   casos," casos"), 
+  #   data_id = ID),
+  #   size = 0.5, alpha = 0.7) +
+  scale_y_continuous(trans = "log10", labels=comma_format(accuracy = 1)) +
+  scale_x_continuous(minor_breaks = NULL, limits = c(1, NA)) + 
   #geom_smooth(method="lm", formula= (y ~ exp(2)), se=FALSE, color=1) +
   # scale_colour_brewer(palette = "Dark2") +
   scale_color_manual(values = col_paises) +
@@ -327,12 +327,12 @@ g2_g <- ggplot(t_gt_diauno[num_dia <= max_dia_CR + 5],
         plot.margin = unit(c(0,0,0,0), "mm"))
 
 girafe(ggobj = g2_g,
-       options = list(opts_tooltip(use_fill = TRUE,
-                                   offx = 10, offy = 10,
-                                   css = "color:white;"),
-                      opts_hover(css = "stroke:orange;
-                 stroke-width:2;"),
-                 opts_toolbar(saveaspng = FALSE)),
+       # options = list(opts_tooltip(use_fill = TRUE,
+       #                             offx = 10, offy = 10,
+       #                             css = "color:white;"),
+       #                opts_hover(css = "stroke:orange;
+       #           stroke-width:2;"),
+       #           opts_toolbar(saveaspng = FALSE)),
        width_svg = 7, height_svg = 5)
 ```
 
@@ -342,15 +342,15 @@ girafe(ggobj = g2_g,
 g4_g <- ggplot(tb_general[#fecha >= fecha_min &
                           fecha >= dmy("20/03/2020")], 
              aes(x = fecha, y = casos_10k, group = pais, col = pais)) + 
-  geom_line(alpha = 0.7) +
-  geom_point_interactive(
-    aes(tooltip = paste0(
-      pais, "\n", 
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-      round(casos_10k,1)," casos/100k hab."),
-      data_id = ID),
-    size = 0.5, alpha = 0.7) + 
-  #scale_y_continuous(trans = "log10") +
+  geom_line(alpha = 0.8) +
+  # geom_point_interactive(
+  #   aes(tooltip = paste0(
+  #     pais, "\n", 
+  #     paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+  #     round(casos_10k,1)," casos/100k hab."),
+  #     data_id = ID),
+  #   size = 0.5, alpha = 0.7) + 
+  scale_y_continuous(labels=comma_format(accuracy = 1)) +
   scale_x_date(date_breaks = "1 week", 
                minor_breaks = NULL,
                date_labels =  formato_fecha) +
@@ -368,12 +368,12 @@ g4_g <- ggplot(tb_general[#fecha >= fecha_min &
         plot.margin = unit(c(0,0,0,5), "mm"))
 
 girafe(ggobj = g4_g,
-       options = list(opts_tooltip(use_fill = TRUE,
-                                   offx = 10, offy = 10,
-                                   css = "color:white;"),
-                      opts_hover(css = "stroke:orange;
-                 stroke-width:2;"),
-                 opts_toolbar(saveaspng = FALSE)),
+       # options = list(opts_tooltip(use_fill = TRUE,
+       #                             offx = 10, offy = 10,
+       #                             css = "color:white;"),
+       #                opts_hover(css = "stroke:orange;
+       #           stroke-width:2;"),
+       #           opts_toolbar(saveaspng = FALSE)),
        width_svg = 7, height_svg = 5)
 ```
 
