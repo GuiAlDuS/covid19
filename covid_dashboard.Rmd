@@ -350,7 +350,7 @@ g4_g <- ggplot(tb_general[#fecha >= fecha_min &
   #     round(casos_10k,1)," casos/100k hab."),
   #     data_id = ID),
   #   size = 0.5, alpha = 0.7) + 
-  scale_y_continuous(labels=comma_format(accuracy = 1)) +
+  scale_y_continuous(trans = "log10", labels=comma_format(accuracy = 0.01)) +
   scale_x_date(date_breaks = "1 week", 
                minor_breaks = NULL,
                date_labels =  formato_fecha) +
@@ -518,64 +518,69 @@ hospitalizacion <- CR_detalles[variable %in% c("salon", "uci") &
 sexo <- CR_detalles[variable %in% c("muj_posi", "hom_posi") &
                         fecha > lubridate::dmy("09/3/2020")]
 
-g_edades <- ggplot(edades[, variable := fcase(variable == "adul_posi", "Adulto",
-                                              variable == "am_posi", "Adulto Mayor",
-                                              variable == "menor_posi", "Menor")],
-       aes(x = fecha, y = casos, group = variable, col = variable)) +
-  geom_line() +
-  geom_point_interactive(
-    aes(tooltip = paste0(
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n",
-      variable, "\n",
-      casos," casos"), 
-      data_id = ID),
-    size = 0.5) + 
-  scale_y_continuous(limits = c(0, NA),
-                     expand = c(0,3)) +
-  scale_x_date(date_breaks = "1 week", 
-               minor_breaks = NULL,
-               date_labels = formato_fecha) +
-  theme_light() +
-  labs(x = "",
-       y = "Casos acumulados",
-       col = "") + 
-  theme(axis.text.x=element_text(angle=60, hjust=1),
-        # legend.key.width = unit(2,"mm"),
-        legend.background = element_rect(fill=NULL, 
-                                  size=0.5, linetype="solid"),
-        legend.margin = unit(c(0,0,0,0), "mm"),
-        legend.position = c(0.25, 0.75), 
-        plot.margin = unit(c(5,5,0,0), "mm"))
-
-g_sexo <- ggplot(sexo[, variable := fcase(variable == "muj_posi", "Mujer",
-                                          variable == "hom_posi", "Hombre")], 
-       aes(x = fecha, y = casos, group = variable, col = variable)) +
-  geom_line() +
-  geom_point_interactive(
-    aes(tooltip = paste0(
-      paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
-      variable, "\n",
-      casos," casos"), 
-      data_id = ID),
-    size = 0.5) +
-  scale_col_branded_d(primary = "grey",
-                       other = "orange") +
-  scale_y_continuous(limits = c(0, NA),
-                     expand = c(0,3)) +
-  scale_x_date(date_breaks = "1 week", 
-               minor_breaks = NULL,
-               date_labels = formato_fecha) +
-  theme_light() +
-  labs(x = "",
-       y = "Casos acumulados",
-       col = "") + 
-  theme(axis.text.x=element_text(angle=60, hjust=1),
-        # legend.key.width = unit(2,"mm"),
-        # legend.text = element_text(size=6),
-        legend.margin = unit(c(0,0,0,0), "mm"),
-        # legend.position = "bottom",
-        legend.position = c(0.2, 0.8), 
-        plot.margin = unit(c(5,0,0,5), "mm"))
+# g_edades <- ggplot(edades[, variable := fcase(variable == "adul_posi", "Adulto",
+#                                               variable == "am_posi", "Adulto Mayor",
+#                                               variable == "menor_posi", "Menor")],
+#        aes(x = fecha, y = casos, group = variable, col = variable)) +
+#   geom_line() +
+#   # geom_point_interactive(
+#   #   aes(tooltip = paste0(
+#   #     paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n",
+#   #     variable, "\n",
+#   #     casos," casos"), 
+#   #     data_id = ID),
+#   #   size = 0.5) + 
+#   # geom_text_repel(data = edades[fecha == ymd(fecha_hoy)], 
+#   #                 aes(label = variable),
+#   #                 nudge_x = 1,
+#   #                 na.rm = TRUE) + 
+#   geom_text(data = edades[fecha == ymd(fecha_hoy)],
+#             aes(label = variable, 
+#                 x = fecha + days(2), 
+#                 y = casos, 
+#                 color = variable)) + 
+#   scale_y_continuous(limits = c(0, NA),
+#                      expand = c(0,3)) +
+#   scale_x_date(date_breaks = "1 week", 
+#                minor_breaks = NULL,
+#                date_labels = formato_fecha) +
+#   theme_light() +
+#   labs(x = "",
+#        y = "Casos acumulados",
+#        col = "") + 
+#   theme(axis.text.x=element_text(angle=60, hjust=1),
+#         legend.position = "none",
+#         plot.margin = unit(c(5,5,0,0), "mm"))
+# 
+# g_sexo <- ggplot(sexo[, variable := fcase(variable == "muj_posi", "Mujer",
+#                                           variable == "hom_posi", "Hombre")], 
+#        aes(x = fecha, y = casos, group = variable, col = variable)) +
+#   geom_line() +
+#   # geom_point_interactive(
+#   #   aes(tooltip = paste0(
+#   #     paste0(day(fecha), " de ", month(fecha, label=TRUE, abbr=FALSE)), "\n", 
+#   #     variable, "\n",
+#   #     casos," casos"), 
+#   #     data_id = ID),
+#   #   size = 0.5) +
+#   scale_col_branded_d(primary = "grey",
+#                        other = "orange") +
+#   scale_y_continuous(limits = c(0, NA),
+#                      expand = c(0,3)) +
+#   scale_x_date(date_breaks = "1 week", 
+#                minor_breaks = NULL,
+#                date_labels = formato_fecha) +
+#   theme_light() +
+#   labs(x = "",
+#        y = "Casos acumulados",
+#        col = "") + 
+#   theme(axis.text.x=element_text(angle=60, hjust=1),
+#         # legend.key.width = unit(2,"mm"),
+#         # legend.text = element_text(size=6),
+#         # legend.margin = unit(c(0,0,0,0), "mm"),
+#         legend.position = "none",
+#         # legend.position = c(0.2, 0.8), 
+#         plot.margin = unit(c(5,0,0,5), "mm"))
 
 g_hospi <- ggplot(hospitalizacion[, `:=`(variable = fcase(variable == "uci", "UCI",
                                                       variable == "salon", "Salón"),
@@ -607,12 +612,12 @@ g_hospi <- ggplot(hospitalizacion[, `:=`(variable = fcase(variable == "uci", "UC
 
 # alineados <- align_plots(g_edades, g_sexo, g_hospi, align = 'hv', axis = 'rl')
 
-girafe(ggobj = plot_grid(g_edades, g_sexo, ncol = 2),
-       options = list(
-         opts_tooltip(use_fill = TRUE),
-         opts_toolbar(saveaspng = FALSE),
-         opts_hover(css = "fill:NULL;stroke:NULL;")),
-       width_svg = 6.5, height_svg = 3)
+# girafe(ggobj = plot_grid(g_edades, g_sexo, ncol = 2),
+#        # options = list(
+#        #   opts_tooltip(use_fill = TRUE),
+#        #   opts_toolbar(saveaspng = FALSE),
+#        #   opts_hover(css = "fill:NULL;stroke:NULL;")),
+#        width_svg = 6.5, height_svg = 3)
 
 girafe(ggobj = g_hospi,
        options = list(
@@ -747,9 +752,16 @@ cant_heatmap <- cant_heatmap[
   fecha >= lubridate::ymd(fecha_hoy) - days(35)
 ]
 
-cant_heatmap$canton <- factor(cant_heatmap$canton, levels=unique(cant_heatmap$canton))
+cant_cero_casos <- cant_heatmap[, .(casos_35d = sum(activos)), by = canton
+                                    ][
+                                      casos_35d == 0, canton
+                                    ]
 
-g_cant_1 <- ggplot(cant_heatmap, 
+cant_heatmap_casos <- cant_heatmap[!(canton %in% cant_cero_casos)]
+
+cant_heatmap_casos$canton <- factor(cant_heatmap_casos$canton, levels=unique(cant_heatmap_casos$canton))
+
+g_cant_1 <- ggplot(cant_heatmap_casos, 
        aes(x = fecha, y = canton, fill = activos)) + 
   geom_tile(width=1, height=.8) +
   #geom_point(size = 0.4) +
@@ -787,7 +799,7 @@ g_cant_1_g <- g_cant_1 +
       data_id = ID), 
     width=1, height=.8)
 
-g_cant_2 <- ggplot(cant_heatmap, 
+g_cant_2 <- ggplot(cant_heatmap_casos, 
        aes(x = fecha, 
            y = canton, 
            fill = nuevos_positivos)) + 
