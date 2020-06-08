@@ -87,7 +87,7 @@ fun_cantones_resumen <- function(fecha_hoy){
   
   tbls <- lapply(URLs[c(1,2,3,4)], fread)
   
-  csv_encoding <- "WINDOWS-1252" #"macroman" 
+  csv_encoding <- "macroman" #"WINDOWS-1252" 
   positivos <- as.data.table(lapply(tbls[[1]], iconv, from = csv_encoding, to = "UTF-8" ))[
     , tipo := "positivos"][
       canton != "" | !is.na(canton)]
@@ -760,7 +760,7 @@ cant_cero_casos <- cant_heatmap[, .(casos_35d = sum(activos)), by = canton
 cant_heatmap_casos <- cant_heatmap[!(canton %in% cant_cero_casos)]
 
 cant_heatmap_casos$canton <- factor(cant_heatmap_casos$canton, levels=unique(cant_heatmap_casos$canton))
-cant_heatmap_casos[nuevos_positivos == 0, nuevos_positivos := NA]
+# cant_heatmap_casos[nuevos_positivos == 0, nuevos_positivos := NA]
 
 g_cant_1 <- ggplot(cant_heatmap_casos, 
        aes(x = fecha, y = canton, fill = activos)) + 
@@ -813,7 +813,10 @@ g_cant_2 <- ggplot(cant_heatmap_casos,
                sec.axis = dup_axis()) +
   # scale_colour_brewer(palette = "Dark2") +
   # scale_y_discrete(position = "right") +
-  scale_fill_viridis_c(option = "plasma", direction = 1, labels = number_format(accuracy = 1)) +
+  scale_fill_viridis_c(option = "plasma", 
+                       direction = 1, 
+                       labels = number_format(accuracy = 1), 
+                       trans = "pseudo_log") +
   theme_light() +
   labs(x = "",
        y = "",
