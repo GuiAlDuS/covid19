@@ -18,11 +18,12 @@ library(sf)
 library(readxl)   
 library(httr)
 library(RColorBrewer)
+library(tmaptools)
 
 Sys.setlocale(locale="es_ES.UTF-8")
 formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
-# fecha_hoy <- "2020-05-07"
+#fecha_hoy <- "2020-06-17"
 
 paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Dominican Republic",
             "Peru", "Chile", "Uruguay", "Cuba", "Ecuador", "Mexico")
@@ -709,7 +710,7 @@ g_prov <- ggplot(melt(provincias[, .(provincia, fecha, positivos, recuperados, a
   scale_x_date(date_breaks = "1 week", 
                minor_breaks = NULL,
                date_labels =  formato_fecha) +
-  scale_fill_brewer(palette = "Set3") +
+  scale_fill_brewer(palette = "Accent") +
   facet_grid(rows = vars(tipo)) +
   theme_light() +
   labs(x = "",
