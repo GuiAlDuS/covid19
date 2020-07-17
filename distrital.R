@@ -5,8 +5,8 @@ library(ggrepel)
 library(httr)
 
 dias_atras <- 3
-#fecha_hoy <- as.character(Sys.Date())
-fecha_hoy <- "2020-07-15"
+fecha_hoy <- as.character(Sys.Date())
+#fecha_hoy <- "2020-07-15"
 mes <- substr(fecha_hoy, 6, 7)
 dia <- substr(fecha_hoy, 9, 10)
 
@@ -39,24 +39,42 @@ dt1_long[
 
 dt1_long[, prct_cmb_prev := cambio_activos / prmd_cmb_prev]
 dt1_long[, ind_final := prct_cmb_prev * prct_cmb_dia_pais]
-dt1_long[, cat_cmb_act := fcase( cambio_activos < 0, "reducción",
-                                  cambio_activos == 0, "sin cambio",
-                                 cambio_activos > 0 & cambio_activos <= 3, "aumento de 1 a 3",
-                                 cambio_activos > 3 & cambio_activos <= 10, "aumento de 3 a 10",
-                                 cambio_activos > 10 & cambio_activos <= 30, "aumento de 10 a 30",
-                                 cambio_activos > 30 & cambio_activos <= 60, "aumento 30 a 60",
-                                 cambio_activos > 60, "aumento mayor a 60")]
 
-dt1_long$cat_cmb_act <- ordered(dt1_long$cat_cmb_act, 
-                               levels = c("reducción", "sin cambio", "aumento de 1 a 3",
-                                          "aumento de 3 a 10", "aumento de 10 a 30", "aumento 30 a 60",
-                                          "aumento mayor a 60"))
-
-dt1_hoy <- dt1_long[fecha == fecha_hoy]
 
 ggplot(dt1_long[fecha == fecha_hoy], 
        aes(x = prct_cmb_dia_pais, y = prct_cmb_prev, col = provincia)) +
   geom_point()
+
+dt1_hoy <- dt1_long[fecha == fecha_hoy]
+
+summary(dt1_hoy$cambio_activos)
+
+cambios_postivos <- dt1_hoy[cambio_activos > 0, cambio_activos]
+intervalos <- classInt::classIntervals(cambios_postivos, 4, style = "jenks")
+
+dt1_hoy[, cat_cmb_act := fcase( cambio_activos < 0, "reducción",
+                                cambio_activos == 0, "sin cambio",
+                                cambio_activos > 0 & cambio_activos <= intervalos$brks[1], 
+                                paste0("aumento de ", intervalos$brks[1]),
+                                cambio_activos > intervalos$brks[1] & cambio_activos < intervalos$brks[2], 
+                                paste0("aumento de ", intervalos$brks[1] + 1, " a ", intervalos$brks[2] - 1),
+                                cambio_activos >= intervalos$brks[2] & cambio_activos < intervalos$brks[3], 
+                                paste0("aumento de ", intervalos$brks[2], " a ", intervalos$brks[3] - 1),
+                                cambio_activos >= intervalos$brks[3] & cambio_activos <= intervalos$brks[4] - 1, 
+                                paste0("aumento de ", intervalos$brks[3], " a ", intervalos$brks[4] - 1),
+                                cambio_activos >= intervalos$brks[4], 
+                                paste0("aumento de ", intervalos$brks[4], " o mayor")
+                                )
+        ]
+
+dt1_hoy$cat_cmb_act <- ordered(dt1_hoy$cat_cmb_act, 
+                               levels = c("reducción", 
+                                          "sin cambio", 
+                                          paste0("aumento de ", intervalos$brks[1]),
+                                          paste0("aumento de ", intervalos$brks[1] + 1, " a ", intervalos$brks[2] - 1),
+                                          paste0("aumento de ", intervalos$brks[2], " a ", intervalos$brks[3] - 1),
+                                          paste0("aumento de ", intervalos$brks[3], " a ", intervalos$brks[4] - 1),
+                                          paste0("aumento de ", intervalos$brks[4], " o mayor")))
 
 library(sf)
 library(gdalUtils)
@@ -91,7 +109,7 @@ mapa_dist <- tm_shape(dist_mapa) +
               style = "cat",
               palette = "viridis",
               #legend.hist = TRUE,
-              title = paste0("Cambio de casos activos (", fecha_hoy, ")"),
+              title = paste0("Cambio diario de casos activos (", fecha_hoy, ")"),
               id = "distrito",
               popup.vars = c("Fecha" = "fecha", 
                              "Provincia" = "provincia",
