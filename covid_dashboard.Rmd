@@ -450,6 +450,7 @@ girafe(ggobj = plot_grid(v_resumenAcum_CR, v_resumenDiario_CR),
 * *pers. pruebas* es el número de personas a las que se les aplicaron pruebas (positivos + descartados).
 * *% pruebas +* es el porcentaje de las personas a las que se le aplicó pruebas y dieron positivo.
 
+### Hospitalizaciones
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
 branded_colors <- list(
   "blue"   = "#00798c",
