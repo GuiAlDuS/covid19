@@ -23,7 +23,7 @@ library(tmaptools)
 Sys.setlocale(locale="es_ES.UTF-8")
 formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
-#fecha_hoy <- "2020-06-17"
+#fecha_hoy <- "2020-07-20"
 
 paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Dominican Republic",
             "Peru", "Chile", "Uruguay", "Cuba", "Ecuador", "Mexico")
@@ -88,7 +88,7 @@ fun_cantones_resumen <- function(fecha_hoy){
   
   tbls <- lapply(URLs[c(1,2,3,4)], fread)
   
-  csv_encoding <- "macroman" #"WINDOWS-1252" 
+  csv_encoding <- "macroman" #"WINDOWS-1252"
   positivos <- as.data.table(lapply(tbls[[1]], iconv, from = csv_encoding, to = "UTF-8" ))[
     , tipo := "positivos"][
       canton != "" | !is.na(canton)]
@@ -139,8 +139,9 @@ fun_cantones_resumen <- function(fecha_hoy){
   setnames(general, tolower(names(general)))
   resumen <- general[fecha != ""
   ][
-    , `:=`(fecha = dmy(fecha), #as.Date(as.integer(fecha), origin = "1899-12-30"),
+    , `:=`(fecha = as.Date(dmy(fecha)), #as.integer(fecha), origin = "1899-12-30"
            activos = as.integer(positivos) - as.integer(recuperados) - as.integer(fallecidos),
+           `pers. pruebas` = as.integer(descartados) + as.integer(positivos),
            `% pruebas +` = round(
              as.integer(positivos)/(as.integer(descartados) + as.integer(positivos))*100, 1))]
   
@@ -390,7 +391,7 @@ girafe(ggobj = g4_g,
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
 v_resumenDiario_CR <- ggplot(
   CR_detalles[ variable %in% c("positivos", "recuperados" , "fallecidos", "activos", 
-                               "descartados", "% pruebas +")], 
+                               "descartados", "pers. pruebas", "% pruebas +")], 
   aes(x = fecha, y = nuevos)) +
   geom_col_interactive(
         aes(tooltip = paste0(day(fecha), " de ", 
@@ -399,7 +400,7 @@ v_resumenDiario_CR <- ggplot(
       data_id = ID_2)) +
   facet_grid(rows = vars(variable), scales = "free") +
   scale_y_continuous(breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1))))) +
-  scale_x_date(date_breaks = "1 week", 
+  scale_x_date(date_breaks = "2 week", 
                minor_breaks = NULL,
                date_labels =  formato_fecha) + 
   theme_light() +
@@ -409,11 +410,11 @@ v_resumenDiario_CR <- ggplot(
     theme(axis.text.x=element_text(angle=60, hjust=1),
         # legend.position="bottom", legend.box = "horizontal", 
         plot.margin = unit(c(5,0,0,5), "mm"),
-        strip.text.x = element_text(size = 5))
+        strip.text.x = element_text(size = 4))
 
 v_resumenAcum_CR <- ggplot(
   CR_detalles[ variable %in% c("positivos", "recuperados" , "fallecidos", "activos", 
-                               "descartados", "% pruebas +")], 
+                               "descartados", "pers. pruebas", "% pruebas +")], 
   aes(x = fecha, y = casos)) +
   geom_line() +
   geom_point_interactive(
@@ -424,7 +425,7 @@ v_resumenAcum_CR <- ggplot(
     size = 0.5) +
   facet_grid(rows = vars(variable), scales = "free") +
   scale_y_continuous(breaks = function(x) unique(floor(pretty(seq(0, (max(x) + 1) * 1.1))))) +
-  scale_x_date(date_breaks = "1 week", 
+  scale_x_date(date_breaks = "2 week", 
                minor_breaks = NULL,
                date_labels =  formato_fecha) + 
   theme_light() +
@@ -434,18 +435,20 @@ v_resumenAcum_CR <- ggplot(
   theme(axis.text.x=element_text(angle=60, hjust=1),
         # legend.position="bottom", legend.box = "horizontal", 
         plot.margin = unit(c(5,5,0,0), "mm"),
-        strip.text.x = element_text(size = 5))
+        strip.text.x = element_text(size = 4))
 
 girafe(ggobj = plot_grid(v_resumenAcum_CR, v_resumenDiario_CR),
        options = list(
           opts_toolbar(saveaspng = FALSE),
           opts_hover(css = "fill:orange;stroke:orange;stroke-width:1;")),
-       width_svg = 7, height_svg = 6
+       width_svg = 7, height_svg = 7
        )
 
 ```
 
 * Tener valores *activos negativos* en casos por día, significa que ese día hubo más recuperados que casos positivos.
+* *pers. pruebas* es el número de personas a las que se les aplicaron pruebas (positivos + descartados).
+* *% pruebas +* es el porcentaje de las personas a las que se le aplicó pruebas y dieron positivo.
 
 ```{r echo=FALSE, message=FALSE, warning=FALSE, fig.align="center"}
 branded_colors <- list(
@@ -850,7 +853,7 @@ girafe(ggobj = plot_grid(g_cant_1_g, g_cant_2_g, rel_widths = c(1, .75)),
                                  stroke:red;
                                  stroke-width:2"),
                       opts_tooltip(offx = 15, offy = 15)),
-       width_svg = 8, height_svg = 10)
+       width_svg = 8, height_svg = 11)
 ```
 
 * Vale aclarar que en las tablas diarias cantonales que publica el Ministerio de Salud a veces se dan cambios en la cantidad de enfermos por cantón que no corresponden con cambios en el total de enfermos del país. Esto vendría siendo como si los enfermos se movilizaron a otro cantón, significando una reducción en el número de casos para el cantón donde salió y un incremento para el cantón donde ingresó (tengo entendido que esto se da con aclaraciones del cantón de residencia del enfermo). En mi caso estoy convirtiendo esos "casos negativos" a cero, para que sea más fácil observar unicamente los cantones donde se dieron los nuevos casos.
