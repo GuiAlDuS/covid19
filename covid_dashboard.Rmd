@@ -25,8 +25,8 @@ formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
 #fecha_hoy <- "2020-07-20"
 
-paises <- c("Costa Rica", "Panama", "Ecuador", "Colombia", "Dominican Republic",
-            "Peru", "Chile", "Uruguay", "Cuba", "Ecuador", "Mexico")
+paises <- c("Costa Rica", "Panama", "El Salvador", "Colombia", "Dominican Republic",
+            "Honduras", "Guatemala", "Uruguay", "Cuba", "Mexico")
 
 fun_paises <- function(fecha_hoy, paises){
   covid19_contagios <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv", header=T)[
