@@ -4,9 +4,9 @@ library(readxl)
 library(ggrepel)
 library(httr)
 
-dias_atras <- 3
+dias_atras <- 5
 fecha_hoy <- as.character(Sys.Date())
-#fecha_hoy <- "2020-07-15"
+#fecha_hoy <- "2020-07-20"
 mes <- substr(fecha_hoy, 6, 7)
 dia <- substr(fecha_hoy, 9, 10)
 
@@ -26,6 +26,7 @@ dt1_long <- melt(dt1,
 setorder(dt1_long, fecha)
 
 dt1_long[, cambio_activos := activos - shift(activos, n = 1L, fill = 0, type = "lag"), by = .(provincia, canton, distrito)]
+#dt1_long <- dt1_long[fecha < fecha_hoy]
 #dt1_long[, ttl_cmb_dia_canton := sum(cambio_activos), by = .(fecha, provincia, canton)]
 #dt1_long[, ttl_cmb_dia_prov := sum(cambio_activos), by = .(fecha, provincia)]
 dt1_long[, ttl_cmb_dia_pais := sum(abs(cambio_activos)), by = fecha]
@@ -40,17 +41,17 @@ dt1_long[
 dt1_long[, prct_cmb_prev := cambio_activos / prmd_cmb_prev]
 dt1_long[, ind_final := prct_cmb_prev * prct_cmb_dia_pais]
 
+library(ggiraph)
+g1 <- ggplot(dt1_long[, .SD[which.max(fecha)], by= .(provincia, canton, distrito)],
+             aes(x = prct_cmb_dia_pais, y = prct_cmb_prev, col = provincia)) +
+  geom_point_interactive(aes(tooltip = distrito))
 
-ggplot(dt1_long[fecha == fecha_hoy], 
-       aes(x = prct_cmb_dia_pais, y = prct_cmb_prev, col = provincia)) +
-  geom_point()
-
-dt1_hoy <- dt1_long[fecha == fecha_hoy]
+girafe(ggobj = g1)
 
 summary(dt1_hoy$cambio_activos)
 
 cambios_postivos <- dt1_hoy[cambio_activos > 0, cambio_activos]
-intervalos <- classInt::classIntervals(cambios_postivos, 4, style = "jenks")
+intervalos <- classInt::classIntervals(cambios_postivos, 3, style = "jenks")
 
 dt1_hoy[, cat_cmb_act := fcase( cambio_activos < 0, "reducción",
                                 cambio_activos == 0, "sin cambio",
