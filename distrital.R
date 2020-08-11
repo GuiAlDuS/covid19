@@ -48,6 +48,8 @@ g1 <- ggplot(dt1_long[, .SD[which.max(fecha)], by= .(provincia, canton, distrito
 
 girafe(ggobj = g1)
 
+dt1_hoy <- dt1_long[fecha == fecha_hoy]
+
 summary(dt1_hoy$cambio_activos)
 
 cambios_postivos <- dt1_hoy[cambio_activos > 0, cambio_activos]
@@ -77,6 +79,45 @@ dt1_hoy$cat_cmb_act <- ordered(dt1_hoy$cat_cmb_act,
                                           paste0("aumento de ", intervalos$brks[3], " a ", intervalos$brks[4] - 1),
                                           paste0("aumento de ", intervalos$brks[4], " o mayor")))
 
+library(tidyxl)
+library(zoo)
+pob <- xlsx_cells(
+  "repoblacev2011-2025-03.xlsx",
+  sheets = "2020"
+)
+
+pob_dt <- as.data.table(pob)
+pob_dt_filtered <- pob_dt[
+  col %in% c(2,3)
+][
+  , .(provincia = fifelse(local_format_id == 6, character, ''),
+      canton = fifelse(local_format_id == 9, character, ''),
+      distrito = fifelse(local_format_id %in% c(10, 11), character, ''),
+      pblcn = shift(numeric, -1))
+][
+  !is.na(pblcn)
+]
+pob_dt_filtered[pob_dt_filtered == ''] <- NA
+pob_dt_filtered$provincia <- na.locf(pob_dt_filtered$provincia, na.rm = FALSE)
+pob_dt_filtered$canton <- na.locf(pob_dt_filtered$canton, na.rm = FALSE)
+pob_dt_filtered <- pob_dt_filtered[!is.na(distrito)]
+pob_dt_filtered <- pob_dt_filtered[pob_dt_filtered[, .I[pblcn == max(pblcn)], by=.(provincia, canton, distrito)]$V1]
+
+dt1_hoy <- merge(dt1_hoy, pob_dt_filtered, by = c("provincia", "canton", "distrito"))
+dt1_hoy[, prct_pob_act := round(activos / pblcn*100, 2)]
+
+dt2 <- as.data.table(read_excel(tf, sheet = "3_1 DIST_ACUM"))
+dt2_long <- melt(dt2, 
+                 id.vars = c(1:6), 
+                 variable.name = "fecha", 
+                 value.name = "acumulados")[
+                   , fecha := as.Date(as.integer(as.character(fecha)), origin = "1899-12-30")
+                 ]
+dt2_hoy <- dt2_long[fecha == fecha_hoy]
+
+dt_hoy <- merge(dt1_hoy, dt2_hoy, by = c("provincia", "canton", "distrito", "cod_provin", "cod_canton", "codigo_dta", "fecha"))
+dt_hoy[, prct_pob_acum := round(acumulados / pblcn*100, 2)]
+
 library(sf)
 library(gdalUtils)
 library(rgdal)
@@ -89,11 +130,16 @@ distritos_simp <- ms_simplify(distritos, keep = 0.01)
 st_write(distritos_simp, "distritos.geojson")
 distritos_simp <- st_read("distritos.geojson")
 
-dist_mapa <- dplyr::inner_join(distritos_simp, dt1_hoy[distrito != "Isla del Coco", 
-                                                      .(codigo_dta, fecha, activos, cambio_activos, ttl_cmb_dia_pais, 
-                                                        prct_cmb_dia_pais, prmd_cmb_prev, prct_cmb_prev, ind_final,
-                                                        cat_cmb_act)]
+dist_mapa <- dplyr::left_join(distritos_simp[distritos_simp$distrito != "Isla del Coco", ], 
+                              dt_hoy[, 
+                                     .(codigo_dta, fecha, activos, cambio_activos, ttl_cmb_dia_pais, 
+                                       prct_cmb_dia_pais, prmd_cmb_prev, prct_cmb_prev, ind_final,
+                                       cat_cmb_act, prct_pob_act, prct_pob_acum)]
                               , by = "codigo_dta")
+
+dist_mapa$fecha <- lubridate::ymd(fecha_hoy)
+dist_mapa[is.na(dist_mapa$cat_cmb_act),]$cat_cmb_act <- "sin cambio"
+dist_mapa[is.na(dist_mapa)] <- 0
 
 library(mapview)
 mapview(dist_mapa, zcol = "activos")
@@ -117,6 +163,31 @@ mapa_dist <- tm_shape(dist_mapa) +
                              "Cantón" = "canton",
                              "Distrito" = "distrito",
                              "Casos activos" = "activos",
-                             "Cambio de casos activos" = "cambio_activos"))
+                             "Cambio de casos activos" = "cambio_activos",
+                             "% de pob. activa" = "prct_pob_act",
+                             "% de pob. positiv." = "prct_pob_acum"))
 
 tmap_save(mapa_dist, "mapa_distritos.html")
+
+###
+tmap_mode("view")
+mapa_dist_acum <- tm_shape(dist_mapa) +
+  tm_polygons(col = "prct_pob_acum",
+              alpha = 0.5,
+              border.col = "black",
+              border.alpha = 0.3,
+              #style = "cat",
+              palette = "viridis",
+              #legend.hist = TRUE,
+              title = paste0("% de población positivo al ", fecha_hoy),
+              id = "distrito",
+              popup.vars = c("Fecha" = "fecha", 
+                             "Provincia" = "provincia",
+                             "Cantón" = "canton",
+                             "Distrito" = "distrito",
+                             "Casos activos" = "activos",
+                             "Cambio de casos activos" = "cambio_activos",
+                             "% de pob. posit. activa" = "prct_pob_act",
+                             "% de pob. posit. acumul." = "prct_pob_acum"))
+
+tmap_save(mapa_dist, "mapa_distritos_acumulados.html")
