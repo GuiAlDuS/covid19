@@ -739,7 +739,7 @@ girafe(ggobj = g_prov,
 
 * Notese que para el 17 de abril hubo un faltante en los datos de personas recuperadas. 
 
-### Evolución de casos por cantón durante los últimos 35 días
+### Evolución de casos por cantón durante los últimos 40 días
 ```{r, echo = FALSE, fig.align="center"}
 cant_heatmap <- cantones_mapa
 setorder(cant_heatmap, -canton, fecha)
@@ -754,7 +754,7 @@ cant_heatmap <- cant_heatmap[
         nuevos_positivos = fifelse(nuevos_positivos < 0, 0, nuevos_positivos),
         ID = seq_len(.N))
 ][
-  fecha >= lubridate::ymd(fecha_hoy) - days(35)
+  fecha >= lubridate::ymd(fecha_hoy) - days(40)
 ]
 
 cant_cero_casos <- cant_heatmap[, .(casos_35d = sum(activos)), by = canton
