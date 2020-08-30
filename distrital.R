@@ -4,7 +4,7 @@ library(readxl)
 library(ggrepel)
 library(httr)
 
-dias_atras <- 5
+dias_atras <- 7
 fecha_hoy <- as.character(Sys.Date())
 #fecha_hoy <- "2020-07-20"
 mes <- substr(fecha_hoy, 6, 7)
@@ -53,34 +53,11 @@ dt1_hoy <- dt1_long[fecha == fecha_hoy]
 summary(dt1_hoy$cambio_activos)
 
 cambios_postivos <- dt1_hoy[cambio_activos > 0, cambio_activos]
-intervalos <- classInt::classIntervals(cambios_postivos, 3, style = "jenks")
 
-dt1_hoy[, cat_cmb_act := fcase( cambio_activos < 0, "reducción",
-                                cambio_activos == 0, "sin cambio",
-                                cambio_activos > 0 & cambio_activos <= intervalos$brks[1], 
-                                paste0("aumento de ", intervalos$brks[1]),
-                                cambio_activos > intervalos$brks[1] & cambio_activos < intervalos$brks[2], 
-                                paste0("aumento de ", intervalos$brks[1] + 1, " a ", intervalos$brks[2] - 1),
-                                cambio_activos >= intervalos$brks[2] & cambio_activos < intervalos$brks[3], 
-                                paste0("aumento de ", intervalos$brks[2], " a ", intervalos$brks[3] - 1),
-                                cambio_activos >= intervalos$brks[3] & cambio_activos <= intervalos$brks[4] - 1, 
-                                paste0("aumento de ", intervalos$brks[3], " a ", intervalos$brks[4] - 1),
-                                cambio_activos >= intervalos$brks[4], 
-                                paste0("aumento de ", intervalos$brks[4], " o mayor")
-                                )
-        ]
-
-dt1_hoy$cat_cmb_act <- ordered(dt1_hoy$cat_cmb_act, 
-                               levels = c("reducción", 
-                                          "sin cambio", 
-                                          paste0("aumento de ", intervalos$brks[1]),
-                                          paste0("aumento de ", intervalos$brks[1] + 1, " a ", intervalos$brks[2] - 1),
-                                          paste0("aumento de ", intervalos$brks[2], " a ", intervalos$brks[3] - 1),
-                                          paste0("aumento de ", intervalos$brks[3], " a ", intervalos$brks[4] - 1),
-                                          paste0("aumento de ", intervalos$brks[4], " o mayor")))
 
 library(tidyxl)
 library(zoo)
+library(fuzzyjoin)
 pob <- xlsx_cells(
   "repoblacev2011-2025-03.xlsx",
   sheets = "2020"
@@ -103,8 +80,25 @@ pob_dt_filtered$canton <- na.locf(pob_dt_filtered$canton, na.rm = FALSE)
 pob_dt_filtered <- pob_dt_filtered[!is.na(distrito)]
 pob_dt_filtered <- pob_dt_filtered[pob_dt_filtered[, .I[pblcn == max(pblcn)], by=.(provincia, canton, distrito)]$V1]
 
-dt1_hoy <- merge(dt1_hoy, pob_dt_filtered, by = c("provincia", "canton", "distrito"))
-dt1_hoy[, prct_pob_act := round(activos / pblcn*100, 2)]
+dt1_hoy_match <- merge(dt1_hoy, pob_dt_filtered, by = c("provincia", "canton", "distrito"))
+
+dist_no_matching <- dt1_hoy[!pob_dt_filtered, on = c("provincia", "canton", "distrito")][
+  distrito != "Sin información de distrito"
+]
+
+dt1_hoy_fuzzy_match <- as.data.table(stringdist_inner_join(dist_no_matching, pob_dt_filtered, 
+                                                           by = c("provincia", "canton", "distrito"), 
+                                                           max_dist = 3)
+)[
+  , .(provincia = provincia.x,
+      canton = canton.x,
+      distrito = distrito.x,
+      cod_provin, cod_canton, codigo_dta, fecha, activos,
+      cambio_activos, pblcn, ttl_cmb_dia_pais, prct_cmb_dia_pais,
+      prmd_cmb_prev, prct_cmb_prev, ind_final)
+]
+
+dt1_hoy_m <- rbindlist(list(dt1_hoy_match, dt1_hoy_fuzzy_match), use.names=TRUE)
 
 dt2 <- as.data.table(read_excel(tf, sheet = "3_1 DIST_ACUM"))
 dt2_long <- melt(dt2, 
@@ -115,8 +109,43 @@ dt2_long <- melt(dt2,
                  ]
 dt2_hoy <- dt2_long[fecha == fecha_hoy]
 
-dt_hoy <- merge(dt1_hoy, dt2_hoy, by = c("provincia", "canton", "distrito", "cod_provin", "cod_canton", "codigo_dta", "fecha"))
-dt_hoy[, prct_pob_acum := round(acumulados / pblcn*100, 2)]
+dt_hoy <- merge(dt1_hoy_m,
+                dt2_hoy, by = c("provincia", "canton", "distrito", "cod_provin", "cod_canton", "codigo_dta", "fecha"))
+dt_hoy[, `:=`(pobl_activa = pblcn - (acumulados - activos),
+              prct_pob_acum = round(acumulados / pblcn*100, 2),
+              prct_pob_act = round(activos / (pblcn - (acumulados - activos))*100, 2))]
+
+intervalos <- classInt::classIntervals(cambios_postivos, 3, style = "jenks")
+
+dt_hoy[, cat_cmb_act := fcase( cambio_activos < 0, "reducción",
+                                cambio_activos == 0, "sin cambio",
+                                cambio_activos > 0 & cambio_activos <= intervalos$brks[1], 
+                                paste0("aumento de ", intervalos$brks[1]),
+                                cambio_activos > intervalos$brks[1] & cambio_activos < intervalos$brks[2], 
+                                paste0("aumento de ", intervalos$brks[1] + 1, " a ", intervalos$brks[2] - 1),
+                                cambio_activos >= intervalos$brks[2] & cambio_activos < intervalos$brks[3], 
+                                paste0("aumento de ", intervalos$brks[2], " a ", intervalos$brks[3] - 1),
+                                cambio_activos >= intervalos$brks[3] & cambio_activos <= intervalos$brks[4] - 1, 
+                                paste0("aumento de ", intervalos$brks[3], " a ", intervalos$brks[4] - 1),
+                                cambio_activos >= intervalos$brks[4], 
+                                paste0("aumento de ", intervalos$brks[4], " o mayor")
+)
+]
+
+dt_hoy$cat_cmb_act <- ordered(dt_hoy$cat_cmb_act, 
+                               levels = c("reducción", 
+                                          "sin cambio", 
+                                          paste0("aumento de ", intervalos$brks[1]),
+                                          paste0("aumento de ", intervalos$brks[1] + 1, " a ", intervalos$brks[2] - 1),
+                                          paste0("aumento de ", intervalos$brks[2], " a ", intervalos$brks[3] - 1),
+                                          paste0("aumento de ", intervalos$brks[3], " a ", intervalos$brks[4] - 1),
+                                          paste0("aumento de ", intervalos$brks[4], " o mayor")))
+
+
+
+#regmatches(texto, regexpr("(?:(El|La) +)?([a-zA-Z0-9])", texto))
+#stringr::str_extract(texto, "(?:(El|La) +)?([a-zA-Z0-9])")
+#sub("(?:(El|La) +)", "", texto)
 
 library(sf)
 library(gdalUtils)
@@ -146,15 +175,14 @@ mapview(dist_mapa, zcol = "activos")
 mapview(dist_mapa, zcol = "cambio_activos")
 
 library(tmap)
-
 tmap_mode("view")
 mapa_dist <- tm_shape(dist_mapa) +
   tm_polygons(col = "cat_cmb_act",
-              alpha = 0.5,
               border.col = "black",
               border.alpha = 0.3,
               style = "cat",
               palette = "viridis",
+              alpha = 0.5,
               #legend.hist = TRUE,
               title = paste0("Cambio diario de casos activos (", fecha_hoy, ")"),
               id = "distrito",
@@ -190,4 +218,4 @@ mapa_dist_acum <- tm_shape(dist_mapa) +
                              "% de pob. posit. activa" = "prct_pob_act",
                              "% de pob. posit. acumul." = "prct_pob_acum"))
 
-tmap_save(mapa_dist, "mapa_distritos_acumulados.html")
+tmap_save(mapa_dist_acum, "mapa_distritos_acumulados.html")
