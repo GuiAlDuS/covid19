@@ -148,15 +148,15 @@ dt_hoy$cat_cmb_act <- ordered(dt_hoy$cat_cmb_act,
 #sub("(?:(El|La) +)", "", texto)
 
 library(sf)
-library(gdalUtils)
-library(rgdal)
-library(rmapshaper)
-dsn <- "WFS:http://geos.snitcr.go.cr/be/IGN_5/wfs?"
-ogrListLayers(dsn)
-
-distritos <- st_read(dsn, "IGN_5:limitedistrital_5k")
-distritos_simp <- ms_simplify(distritos, keep = 0.01)
-st_write(distritos_simp, "distritos.geojson")
+#library(gdalUtils)
+#library(rgdal)
+#library(rmapshaper)
+# dsn <- "WFS:http://geos.snitcr.go.cr/be/IGN_5/wfs?"
+# ogrListLayers(dsn)
+# 
+# distritos <- st_read(dsn, "IGN_5:limitedistrital_5k")
+# distritos_simp <- ms_simplify(distritos, keep = 0.01)
+# st_write(distritos_simp, "distritos.geojson")
 distritos_simp <- st_read("distritos.geojson")
 
 dist_mapa <- dplyr::left_join(distritos_simp[distritos_simp$distrito != "Isla del Coco", ], 
