@@ -109,8 +109,20 @@ dt2_long <- melt(dt2,
                  ]
 dt2_hoy <- dt2_long[fecha == fecha_hoy]
 
+dt3 <- as.data.table(read_excel(tf, sheet = "3_3 DIST_FALL"))
+dt3_long <- melt(dt3,
+                 id.vars = c(1:6), 
+                 variable.name = "fecha", 
+                 value.name = "fallecidos")[
+                   , fecha := as.Date(as.integer(as.character(fecha)), origin = "1899-12-30")
+                 ]
+dt3_hoy <- dt3_long[fecha == fecha_hoy]
+
 dt_hoy <- merge(dt1_hoy_m,
                 dt2_hoy, by = c("provincia", "canton", "distrito", "cod_provin", "cod_canton", "codigo_dta", "fecha"))
+dt_hoy <- merge(dt_hoy,
+                dt3_hoy, by = c("provincia", "canton", "distrito", "cod_provin", "cod_canton", "codigo_dta", "fecha"))
+
 dt_hoy[, `:=`(pobl_activa = pblcn - (acumulados - activos),
               prct_pob_acum = round(acumulados / pblcn*100, 2),
               prct_pob_act = round(activos / (pblcn - (acumulados - activos))*100, 2))]
@@ -163,7 +175,7 @@ dist_mapa <- dplyr::left_join(distritos_simp[distritos_simp$distrito != "Isla de
                               dt_hoy[, 
                                      .(codigo_dta, fecha, activos, cambio_activos, ttl_cmb_dia_pais, 
                                        prct_cmb_dia_pais, prmd_cmb_prev, prct_cmb_prev, ind_final,
-                                       cat_cmb_act, prct_pob_act, prct_pob_acum)]
+                                       cat_cmb_act, prct_pob_act, prct_pob_acum, fallecidos)]
                               , by = "codigo_dta")
 
 dist_mapa$fecha <- lubridate::ymd(fecha_hoy)
@@ -193,7 +205,8 @@ mapa_dist <- tm_shape(dist_mapa) +
                              "Casos activos" = "activos",
                              "Cambio de casos activos" = "cambio_activos",
                              "% de pob. activa" = "prct_pob_act",
-                             "% de pob. positiv." = "prct_pob_acum"))
+                             "% de pob. positiv." = "prct_pob_acum",
+                             "Fallecidos" = "fallecidos"))
 
 tmap_save(mapa_dist, "mapa_distritos.html")
 
@@ -216,6 +229,7 @@ mapa_dist_acum <- tm_shape(dist_mapa) +
                              "Casos activos" = "activos",
                              "Cambio de casos activos" = "cambio_activos",
                              "% de pob. posit. activa" = "prct_pob_act",
-                             "% de pob. posit. acumul." = "prct_pob_acum"))
+                             "% de pob. posit. acumul." = "prct_pob_acum",
+                             "Fallecidos" = "fallecidos"))
 
 tmap_save(mapa_dist_acum, "mapa_distritos_acumulados.html")
