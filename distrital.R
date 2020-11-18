@@ -3,6 +3,7 @@ library(ggplot2)
 library(readxl)
 library(ggrepel)
 library(httr)
+library(scales)
 
 dias_atras <- 7
 fecha_hoy <- as.character(Sys.Date())
@@ -77,7 +78,10 @@ pob_dt_filtered <- pob_dt[
 pob_dt_filtered[pob_dt_filtered == ''] <- NA
 pob_dt_filtered$provincia <- na.locf(pob_dt_filtered$provincia, na.rm = FALSE)
 pob_dt_filtered$canton <- na.locf(pob_dt_filtered$canton, na.rm = FALSE)
-pob_dt_filtered <- pob_dt_filtered[!is.na(distrito)]
+pob_dt_filtered <- pob_dt_filtered[!is.na(distrito)
+][ canton == "Valverde Vega", canton := "Sarchí"
+][ canton == "Aguirre", canton := "Quepos"
+]
 pob_dt_filtered <- pob_dt_filtered[pob_dt_filtered[, .I[pblcn == max(pblcn)], by=.(provincia, canton, distrito)]$V1]
 
 dt1_hoy_match <- merge(dt1_hoy, pob_dt_filtered, by = c("provincia", "canton", "distrito"))
@@ -124,8 +128,8 @@ dt_hoy <- merge(dt_hoy,
                 dt3_hoy, by = c("provincia", "canton", "distrito", "cod_provin", "cod_canton", "codigo_dta", "fecha"))
 
 dt_hoy[, `:=`(pobl_activa = pblcn - (acumulados - activos),
-              prct_pob_acum = round(acumulados / pblcn*100, 2),
-              prct_pob_act = round(activos / (pblcn - (acumulados - activos))*100, 2))]
+              prct_pob_acum = acumulados / pblcn,
+              prct_pob_act = activos / (pblcn - (acumulados - activos)))]
 
 intervalos <- classInt::classIntervals(cambios_postivos, 3, style = "jenks")
 
@@ -140,7 +144,7 @@ dt_hoy[, cat_cmb_act := fcase( cambio_activos < 0, "reducción",
                                 cambio_activos >= intervalos$brks[3] & cambio_activos <= intervalos$brks[4] - 1, 
                                 paste0("aumento de ", intervalos$brks[3], " a ", intervalos$brks[4] - 1),
                                 cambio_activos >= intervalos$brks[4], 
-                                paste0("aumento de ", intervalos$brks[4], " o mayor")
+                                paste0("aumento de ", intervalos$brks[4])
 )
 ]
 
@@ -151,7 +155,7 @@ dt_hoy$cat_cmb_act <- ordered(dt_hoy$cat_cmb_act,
                                           paste0("aumento de ", intervalos$brks[1] + 1, " a ", intervalos$brks[2] - 1),
                                           paste0("aumento de ", intervalos$brks[2], " a ", intervalos$brks[3] - 1),
                                           paste0("aumento de ", intervalos$brks[3], " a ", intervalos$brks[4] - 1),
-                                          paste0("aumento de ", intervalos$brks[4], " o mayor")))
+                                          paste0("aumento de ", intervalos$brks[4])))
 
 
 
@@ -173,9 +177,12 @@ distritos_simp <- st_read("distritos.geojson")
 
 dist_mapa <- dplyr::left_join(distritos_simp[distritos_simp$distrito != "Isla del Coco", ], 
                               dt_hoy[, 
-                                     .(codigo_dta, fecha, activos, cambio_activos, ttl_cmb_dia_pais, 
+                                     .(codigo_dta, fecha, pblcn, acumulados, activos, cambio_activos, ttl_cmb_dia_pais, 
                                        prct_cmb_dia_pais, prmd_cmb_prev, prct_cmb_prev, ind_final,
-                                       cat_cmb_act, prct_pob_act, prct_pob_acum, fallecidos)]
+                                       cat_cmb_act, 
+                                       prct_pob_act = percent(prct_pob_act, 0.01), 
+                                       prct_pob_acum = percent(prct_pob_acum, 0.01), 
+                                       fallecidos)]
                               , by = "codigo_dta")
 
 dist_mapa$fecha <- lubridate::ymd(fecha_hoy)
@@ -202,13 +209,22 @@ mapa_dist <- tm_shape(dist_mapa) +
                              "Provincia" = "provincia",
                              "Cantón" = "canton",
                              "Distrito" = "distrito",
+                             "Pob. estimada INEC" = "pblcn",
+                             "Casos totales" = "acumulados",
+                             "% de pob. contagiada" = "prct_pob_acum",
                              "Casos activos" = "activos",
+                             "% de pob. contagio activo" = "prct_pob_act",
                              "Cambio de casos activos" = "cambio_activos",
-                             "% de pob. activa" = "prct_pob_act",
-                             "% de pob. positiv." = "prct_pob_acum",
                              "Fallecidos" = "fallecidos"))
 
 tmap_save(mapa_dist, "mapa_distritos.html")
+
+## Moravia
+
+dt_moravia <- dt1_long[canton == "Moravia"]
+
+ggplot(dt_moravia, aes(x = fecha, y = activos)) + 
+  geom_col() +
 
 ###
 tmap_mode("view")
@@ -233,3 +249,11 @@ mapa_dist_acum <- tm_shape(dist_mapa) +
                              "Fallecidos" = "fallecidos"))
 
 tmap_save(mapa_dist_acum, "mapa_distritos_acumulados.html")
+
+######
+t_cntrys_posit[, nuevos := casos - shift(casos, fill = 0)]
+positivos <- tb_general[tipo == "positivos"]
+setorder(positivos, pais, -nuevos_casos)
+positivos[, orden := seq_len(.N), by = pais]
+
+positivos[orden <= 2]
