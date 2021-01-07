@@ -1,9 +1,10 @@
 ---
 title: "COVID-19 en Costa Rica"
+author: "gds506"
 date: "`r format(Sys.time(), '%d-%m-%Y %I:%M:%S%p')`"
-author: gds506
-output: 
-  html_document
+output:
+  html_document:
+    df_print: paged
 ---
 
 ```{r setup, include=FALSE}
@@ -25,8 +26,8 @@ formato_fecha <- "%d-%b"
 fecha_hoy <- as.character(Sys.Date())
 #fecha_hoy <- "2020-07-20"
 
-paises <- c("Costa Rica", "Panama", "El Salvador", "Colombia", "Dominican Republic",
-            "Honduras", "Guatemala", "Uruguay", "Cuba", "Mexico")
+paises <- c("Costa Rica", "Panama", "El Salvador", "Dominican Republic",
+            "Honduras", "Guatemala", "Uruguay", "Cuba")
 
 fun_paises <- function(fecha_hoy, paises){
   covid19_contagios <- fread("https://raw.githubusercontent.com/CSSEGISandData/COVID-19/master/csse_covid_19_data/csse_covid_19_time_series/time_series_covid19_confirmed_global.csv", header=T)[
@@ -81,7 +82,7 @@ fun_cantones_resumen <- function(fecha_hoy){
 
   #http://geovision.uned.ac.cr/oges/archivos_covid/04_29/04_29_CSV_GENERAL.csv
   #"http://geovision.uned.ac.cr/oges/archivos_covid/04_29/04_29_CSV_GENERAL.csv"  
-  URLs <- paste0("http://geovision.uned.ac.cr/oges/archivos_covid/", 
+  URLs <- paste0("http://geovision.uned.ac.cr/oges/archivos_covid/2021_", 
                       substr(fecha_hoy, 6, 7), "_", substr(fecha_hoy, 9, 10), "/",
                       substr(fecha_hoy, 6, 7), "_", substr(fecha_hoy, 9, 10),
                 "_CSV_", tbl_tipo, ".csv")
@@ -272,7 +273,7 @@ g1_g <- ggplot(t_cntrys[
   #     data_id = ID),
   #   size = 0.5, alpha = 0.7) +
   scale_y_continuous(trans = "log10", labels=comma_format(accuracy = 1)) +
-  scale_x_date(date_breaks = "1 week", 
+  scale_x_date(date_breaks = "1 month", 
                minor_breaks = NULL,
                date_labels = formato_fecha) +
   # scale_colour_brewer(palette = "Dark2") +
@@ -353,7 +354,7 @@ g4_g <- ggplot(tb_general[#fecha >= fecha_min &
   #     data_id = ID),
   #   size = 0.5, alpha = 0.7) + 
   scale_y_continuous(trans = "log10", labels=comma_format(accuracy = 0.01)) +
-  scale_x_date(date_breaks = "1 week", 
+  scale_x_date(date_breaks = "1 month", 
                minor_breaks = NULL,
                date_labels =  formato_fecha) +
   # scale_colour_brewer(palette = "Dark2") +

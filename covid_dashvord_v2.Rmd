@@ -1,0 +1,364 @@
+---
+title: "COVID-19 en Costa Rica"
+date: "`r format(Sys.time(), '%d-%m-%Y %I:%M:%S%p')`"
+author: gds506
+output: 
+  html_document
+---
+
+```{r}
+library(data.table)
+library(scales)
+library(ggplot2)
+library(ggiraph)
+library(readxl)
+library(httr)
+Sys.setlocale(locale="es_ES.UTF-8")
+```
+
+```{r}
+dias_atras <- 7
+fecha_hoy <- as.character(Sys.Date())
+#fecha_hoy <- "2020-12-19"
+mes <- substr(fecha_hoy, 6, 7)
+dia <- substr(fecha_hoy, 9, 10)
+
+
+url1<-paste0('http://geovision.uned.ac.cr/oges/archivos_covid/2021_', mes, '_',  dia, '/', mes, '_', dia, '_EXCEL_SERIES.xlsx')
+GET(url1, write_disk(tf <- tempfile(fileext = ".xlsx")))
+
+```
+
+```{r}
+general <- as.data.table(read_excel(tf, sheet = "1_GENERAL"))
+
+### cantones
+cant_activos <- as.data.table(read_excel(tf, sheet = "2_4 CANT_ACTIVOS"))
+cant_activos <- cbind(tipo = "Activos", cant_activos)
+cant_recuperados <- as.data.table(read_excel(tf, sheet = "2_2 CANT_RECUPERADOS"))
+cant_recuperados <- cbind(tipo = "Recuperados", cant_recuperados)
+cant_acumulados <- as.data.table(read_excel(tf, sheet = "2_1CANT_ACUMULADOS"))
+cant_acumulados <- cbind(tipo = "Acumulados", cant_acumulados)
+cant_fallecidos <- as.data.table(read_excel(tf, sheet = "2_3 CANT_FALLECIDOS"))
+cant_fallecidos <- cbind(tipo = "Fallecidos", cant_fallecidos)
+tipos_cantones <- list(cant_activos, cant_recuperados, cant_acumulados, cant_fallecidos)
+
+cantones <- lapply(tipos_cantones, 
+                   function(x) melt(x, 
+                                    id.vars = c(1:5), 
+                                    variable.name = "fecha", 
+                                    value.name = "Casos"
+                   )[
+                     , fecha := as.Date(as.integer(as.character(fecha)), origin = "1899-12-30")
+                   ]
+)
+
+cantones_long <- rbindlist(cantones, fill = F, idcol = NULL)
+setorder(cantones_long, cod_canton, tipo, fecha)
+cantones_long[
+  , Nuevos := Casos - shift(Casos, fill = 0), 
+  by = tipo
+][
+  , mu_nuevos_7dias := frollmean(Nuevos, 7, fill = NA, align = "right", na.rm = T),
+  by = tipo
+]
+
+### distritos
+dist_activos <- as.data.table(read_excel(tf, sheet = "3_4 DIST_ACTIV"))
+dist_activos <- cbind(tipo = "Activos", dist_activos)
+dist_recuperados <- as.data.table(read_excel(tf, sheet = "3_2 DIST_RECUP"))
+dist_recuperados <- cbind(tipo = "Recuperados", dist_recuperados)
+dist_acumulados <- as.data.table(read_excel(tf, sheet = "3_1 DIST_ACUM"))
+dist_acumulados <- cbind(tipo = "Acumulados", dist_acumulados)
+dist_fallecidos <- as.data.table(read_excel(tf, sheet = "3_3 DIST_FALL"))
+dist_fallecidos <- cbind(tipo = "Fallecidos", dist_fallecidos)
+tipos_distritos <- list(dist_activos, dist_recuperados, dist_acumulados, dist_fallecidos)
+
+distritos <- lapply(tipos_distritos, 
+                   function(x) melt(x, 
+                                    id.vars = c(1:7), 
+                                    variable.name = "fecha", 
+                                    value.name = "Casos"
+                   )[
+                     , fecha := as.Date(as.integer(as.character(fecha)), origin = "1899-12-30")
+                   ]
+)
+
+distritos_long <- rbindlist(distritos, fill = F, idcol = NULL)
+setorder(distritos_long, codigo_dta, tipo, fecha)
+distritos_long[
+  , Nuevos := Casos - shift(Casos, fill = 0), 
+  by = tipo
+][
+  , mu_nuevos_7dias := frollmean(Nuevos, 7, fill = NA, align = "right", na.rm = T),
+  by = tipo
+]
+```
+
+```{r}
+#ajustando por población
+library(tidyxl)
+library(zoo)
+library(fuzzyjoin)
+pob <- xlsx_cells(
+  "repoblacev2011-2025-03.xlsx",
+  sheets = "2020"
+)
+
+pob_dt <- as.data.table(pob)
+pob_dt_filtered <- pob_dt[
+  col %in% c(2,3)
+][
+  , .(provincia = fifelse(local_format_id == 6, character, ''),
+      canton = fifelse(local_format_id == 9, character, ''),
+      distrito = fifelse(local_format_id %in% c(10, 11), character, ''),
+      pblcn = shift(numeric, -1),
+      row_num = seq.int(nrow(pob_dt)))
+][
+  !is.na(pblcn)
+]
+
+#tomando solo las poblaciones generales
+ultimo_dist <- "Duacarí"
+ultimo_row <- pob_dt_filtered[
+  distrito == ultimo_dist
+][
+  pblcn == max(pblcn) & row_num == min(row_num), row_num
+]
+
+pob_dt_filtered <- pob_dt_filtered[row_num <= ultimo_row]
+
+pob_dt_filtered[pob_dt_filtered == ''] <- NA
+pob_dt_filtered$provincia <- na.locf(pob_dt_filtered$provincia, na.rm = FALSE)
+pob_dt_filtered$canton <- na.locf(pob_dt_filtered$canton, na.rm = FALSE)
+pob_dt_filtered <- pob_dt_filtered[!is.na(distrito)
+][
+  canton == "Valverde Vega", canton := "Sarchí"
+][
+  canton == "Aguirre", canton := "Quepos"
+][ distrito %in% 
+  c("Espíritu Santo", "Esparza", "Macacona", "San Juan Grande", "San Rafael", "Caldera") &
+  provincia == "Puntarenas", 
+  canton = "Esparza"]
+
+pob_dt_filtered <- pob_dt_filtered[pob_dt_filtered[, .I[pblcn == max(pblcn)], by=.(provincia, canton, distrito)]$V1]
+
+pob_canton <- pob_dt_filtered[, 
+                              .(pblcn = sum(pblcn)), 
+                              by = .(provincia, canton)]
+
+test_canton <- cantones_long[, .(counts = .N), by = .(cod_provin, provincia, cod_canton, canton)]
+
+cantones_merge <- merge(test_canton, pob_canton, by = c("provincia", "canton"))
+cantones_not_merge <- test_canton[!cantones_merge, on = c("provincia", "canton")]
+
+# dist_no_matching <- dt1_hoy[!pob_dt_filtered, on = c("provincia", "canton", "distrito")][
+#   distrito != "Sin información de distrito"
+# ]
+# 
+# dt1_hoy_fuzzy_match <- as.data.table(stringdist_inner_join(dist_no_matching, pob_dt_filtered, 
+#                                                            by = c("provincia", "canton", "distrito"), 
+#                                                            max_dist = 3)
+# )[
+#   , .(provincia = provincia.x,
+#       canton = canton.x,
+#       distrito = distrito.x,
+#       cod_provin, cod_canton, codigo_dta, fecha, activos,
+#       cambio_activos, pblcn, ttl_cmb_dia_pais, prct_cmb_dia_pais,
+#       prmd_cmb_prev, prct_cmb_prev, ind_final)
+# ]
+```
+
+
+
+```{r}
+ggplot(cantones_long[fecha >= max(fecha) - lubridate::days(40)], 
+       aes(x = fecha, y = mu_nuevos_7dias, group = canton),
+       alpha = 0.3) +
+  geom_point(size = 0.3) +
+  facet_grid(rows = vars(tipo), scales = "free")
+```
+
+
+Tabla general:
+
+```{r}
+general[
+  , `:=`(nue_pruebas = nue_descar + conf_lab,
+         prct_posit = conf_lab / (nue_descar + nue_posi))
+]
+
+general_long <- melt(general, 
+                     id.vars = "FECHA", 
+                     variable.name = "Variable", 
+                     value.name = "Casos"
+)[, Casos := as.numeric(Casos)]
+setorder(general_long, Variable, FECHA)
+
+general_long[, 
+  mu_7dias := frollmean(Casos, 7, fill = NA, align = "right", na.rm = T),
+  by = "Variable"
+]
+
+ggplot(general_long[
+  Variable %in% c("nue_posi", "conf_lab", "conf_nexo"),
+  .(FECHA, Variable, Casos)],
+  aes(x = FECHA, y = Casos, group = Variable, col = Variable)) +
+  geom_line()
+
+ggplot(general_long[
+  Variable %in% c("nue_posi", "conf_lab", "conf_nexo"),
+  .(FECHA, Variable, mu_7dias)],
+  aes(x = FECHA, y = mu_7dias, group = Variable, col = Variable)) +
+  geom_line() +
+  labs(x = "Fecha", y = "Promedio de nuevos casos diarios en 7 días")
+
+
+```
+
+
+```{r}
+ggplot(general_long[
+  Variable %in% c("positivos", "descartados"),
+  .(FECHA, Variable, Casos)],
+  aes(x = FECHA, y = Casos, group = Variable, col = Variable)) +
+  geom_line()
+
+```
+
+```{r}
+ggplot(general_long[Variable == "nue_pruebas"], 
+       aes(x = FECHA, y = Casos)) +
+  geom_line()
+
+ggplot(general_long[Variable == "nue_pruebas"], 
+       aes(x = FECHA, y = mu_7dias)) +
+  geom_line()
+
+ggplot(general_long[Variable == "prct_posit" & !is.na(Casos)],
+       aes(x = FECHA, y = Casos)) +
+  geom_line()
+
+ggplot(general_long[Variable == "prct_posit" & !is.na(Casos)],
+       aes(x = FECHA, y = mu_7dias)) +
+  geom_line()
+
+```
+
+```{r}
+ggplot(general_long[Variable == "nue_falleci"], 
+       aes(x = FECHA, y = Casos)) +
+  geom_line() +
+  scale_x_datetime(date_breaks = "1 month", date_minor_breaks = "1 week",
+                   date_labels = "%b")
+
+ggplot(general_long[Variable == "nue_falleci"], 
+       aes(x = FECHA, y = mu_7dias)) +
+  geom_line() +
+  scale_x_datetime(date_breaks = "1 month", date_minor_breaks = "1 week",
+                   date_labels = "%b")
+```
+
+
+
+
+```{r}
+ggplot(general_long[
+  Variable %in% c("salon", "UCI"),
+  .(FECHA, Variable, Casos)],
+  aes(x = FECHA, y = Casos, group = Variable, col = Variable)) +
+  geom_line()
+
+ggplot(general_long[
+  Variable %in% c("salon", "UCI"),
+  .(FECHA, Variable, mu_7dias)],
+  aes(x = FECHA, y = mu_7dias, group = Variable, col = Variable)) +
+  geom_line()
+```
+
+```{r}
+ggplot(general_long[
+  Variable %in% c("emin_UCI", "promedio_UCI", "emax_UC"),
+  .(FECHA, Variable, Casos)],
+  aes(x = FECHA, y = Casos, group = Variable, col = Variable)) +
+  geom_line()
+
+```
+
+```{r}
+ggplot(general_long[
+  Variable %like% "SALON$",
+  .(FECHA, Variable, Casos)],
+  aes(x = FECHA, y = Casos, group = Variable, col = Variable)) +
+  geom_line()
+```
+
+```{r}
+ggplot(general_long[
+  Variable %like% "_UCI$" & !Variable %in% c("nue_UCI", "emin_UCI", "promedio_UCI"),
+  .(FECHA, Variable, Casos)],
+  aes(x = FECHA, y = Casos, group = Variable, col = Variable)) +
+  geom_line()
+```
+
+```{r}
+library(jcolors)
+dist_Moravia <- distritos_long[canton == "Moravia"]
+
+ggplot() +
+  geom_line(aes(x = fecha, y = mu_nuevos_7dias, col = distrito, group = distrito), 
+            data = dist_Moravia[tipo == "Acumulados" & 
+                                  distrito != "Sin información de distrito" &
+                                  mu_nuevos_7dias >= 0])
+
+ggplot() +
+  geom_col(aes(x = fecha, y = Nuevos, fill = distrito, group = distrito), 
+            data = dist_Moravia[tipo == "Acumulados" & 
+                                  distrito != "Sin información de distrito" &
+                                  Nuevos >= 0],
+           position = "stack", alpha = 0.8) +
+  labs(x = "Fecha", y = "Nuevos casos", fill = "Distrito", 
+       title = "Nuevos casos diarios en los distritos del cantón de Moravia",
+       caption = paste0("Fuente: Ministerio de Salud de CR\n", url1)) +
+  theme_linedraw() +
+  scale_fill_jcolors(palette = "pal3") +
+  scale_x_date(date_minor_breaks = "1 week")
+
+ggplot() +
+  geom_area(aes(x = fecha, y = Casos, fill = distrito, group = distrito), 
+            data = dist_Moravia[tipo == "Fallecidos" & 
+                                  distrito != "Sin información de distrito"],
+           position = "stack", alpha = 0.8) +
+    labs(x = "Fecha", y = "Número acumulado de muertes", fill = "Distrito", 
+       title = "Acumulado de muertes asociadas a COVID19 en el cantón de Moravia",
+       caption = paste0("Fuente: Ministerio de Salud de CR\n", url1)) +
+  theme_linedraw() +
+  scale_fill_jcolors(palette = "pal3") +
+  scale_x_date(date_minor_breaks = "1 week")
+
+```
+
+## Mapa distritos, casos nuevos:
+
+```{r}
+dt_hoy <- distritos_long[fecha == lubridate::ymd(fecha_hoy)]
+
+library(sf)
+distritos_simp <- st_read("distritos.geojson")
+
+dist_mapa <- dplyr::left_join(distritos_simp[distritos_simp$distrito != "Isla del Coco", ], 
+                              dt_hoy[, 
+                                     .(codigo_dta, fecha, pblcn, acumulados, activos, 
+                                       cambio_activos, ttl_cmb_dia_pais, 
+                                       prct_cmb_dia_pais, prmd_cmb_prev, prct_cmb_prev, ind_final,
+                                       cat_cmb_act, 
+                                       prct_pob_act = percent(prct_pob_act, 0.01), 
+                                       prct_pob_acum = percent(prct_pob_acum, 0.01), 
+                                       fallecidos)]
+                              , by = "codigo_dta")
+
+dist_mapa$fecha <- lubridate::ymd(fecha_hoy)
+dist_mapa[is.na(dist_mapa$cat_cmb_act),]$cat_cmb_act <- "sin cambio"
+dist_mapa[is.na(dist_mapa)] <- 0
+```
+
