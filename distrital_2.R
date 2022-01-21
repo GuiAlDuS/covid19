@@ -7,12 +7,11 @@ library(scales)
 
 dias_atras <- 7
 fecha_hoy <- as.character(Sys.Date())
-#fecha_hoy <- "2020-07-20"
+#fecha_hoy <- "2021-08-31"
 mes <- substr(fecha_hoy, 6, 7)
 dia <- substr(fecha_hoy, 9, 10)
 
-
-url1<-paste0('http://geovision.uned.ac.cr/oges/archivos_covid/2021_', mes, '_',  dia, '/', mes, '_', dia, '_EXCEL_SERIES.xlsx')
+url1<-paste0('http://geovision.uned.ac.cr/oges/archivos_covid/2022_', mes, '_',  dia, '/', mes, '_', dia, '_22_EXCEL_SERIES.xlsx')
 GET(url1, write_disk(tf <- tempfile(fileext = ".xlsx")))
 
 dt1 <- as.data.table(read_excel(tf, sheet = "3_4 DIST_ACTIV"))
@@ -211,7 +210,7 @@ mapa_dist <- tm_shape(dist_mapa) +
               palette = "viridis",
               alpha = 0.5,
               #legend.hist = TRUE,
-              title = paste0("Nuevos casos diarios (", fecha_hoy, ")"),
+              title = paste0("Nuevos casos por distrito (", fecha_hoy, ")"),
               id = "distrito",
               popup.vars = c("Fecha" = "fecha", 
                              "Provincia" = "provincia",
